@@ -1,4 +1,6 @@
 - [x] Analyze raw dataset, how is it structured?
-- [ ] Decide which logs + log_detail_codes should be used (keep it simple for this basic model)
-- [ ] Analyze how a fraction of raw dataset can be extracted (e.g. 100k rows, or maybe 1M at most)
+- [x] Decide which logs + log_detail_codes should be used (keep it simple for this basic model)
+- [x] Decide which raw dataset columns should be used (again, keep it simple for this basic model)
+- [ ] Apply row/column filtering on a couple CSVs and check reduction in file size and row count
+- [ ] If row count >> 1M => Analyze how a fraction of raw dataset can be extracted
 - [ ] Save the reduced raw dataset for efficient working on this sample model
