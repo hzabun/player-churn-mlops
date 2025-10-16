@@ -14,8 +14,24 @@
     - `log_detail_code` of 1 would mean player enters the game server (see `BnS_logSchema_Code.csv`)
     - And 3 would mean player got revided
 
-## Preprocessing approach
+## Log id mappings
 
-- Read raw CSV logs via pandas
-- Filter for necessary `logid` and `log_detail_code`
-- Remove unnecessary columns
+- 1013 PcLevelUp
+- 1101 InviteParty
+- 1103 RefuseParty
+- 1202 Die
+- 1404 DuelEnd(PC)
+- 1406 DuelEnd(Team)
+- 1422 PartyBattleEnd(Team)
+- 2112 ExpandWarehouse
+- 2141 ChangeItemLook
+- 2301 PutMainAuction
+- 2405 UseGatheringItem
+- 5004 CompleteQuest
+- 5011 CompleteChallengeToday
+- 5015 CompleteChallengeWeek
+- 6001 CreateGuild
+- 6002 DestoryGuild
+- 6004 InviteGuild
+- 6005 JoinGuild
+- 6009 DissmissGuild
