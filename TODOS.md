@@ -2,6 +2,5 @@
 - [x] Decide which logs + log_detail_codes should be used (keep it simple for this basic model)
 - [x] Decide which raw dataset columns should be used (again, keep it simple for this basic model)
 - [x] Apply row/column filtering on a couple CSVs and check reduction in file size and row count
-- [ ] Apply remaining preprocessing (group session IDs to get session duration and sums of specific logs, e.g. number of quests completed, number of level ups etc.)
-  - [ ] Check row count after session ID groupin, if row count >> 1M => Analyze how a fraction of raw dataset can be extracted
-  - [ ] Save the reduced raw dataset for efficient working on this sample model
+- [x] Apply remaining preprocessing (group session IDs to get session duration and sums of specific logs, e.g. number of quests completed, number of level ups etc.)
+- [ ]
