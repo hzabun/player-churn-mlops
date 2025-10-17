@@ -14,8 +14,8 @@ feature_columns = [
     "actor_level",
 ]
 
-# Simple logids (match by logid only)
-simple_log_ids = [
+# Simple logids (match by logid only) - using set for O(1) lookup
+simple_log_ids = {
     1013,
     1101,
     1103,
@@ -35,7 +35,7 @@ simple_log_ids = [
     6004,
     6005,
     6009,
-]
+}
 
 # Tuple conditions: (logid, log_detail_code) - match both columns
 tuple_log_ids = [
@@ -117,181 +117,296 @@ def filter_csv(df_column_filtered):
     Raises:
         ValueError: If any required columns are missing from the CSV file
     """
-    # Read only the required columns to avoid dtype warnings and improve performance
-    # First, check if all columns exist by reading just the header
-    missing_columns = [
-        col for col in feature_columns if col not in df_column_filtered.columns
-    ]
+    # Check if all columns exist (use set for faster lookup)
+    missing_columns = set(feature_columns) - set(df_column_filtered.columns)
     if missing_columns:
         raise ValueError(
-            f"Missing required columns in CSV file: {missing_columns}\n"
+            f"Missing required columns in CSV file: {list(missing_columns)}\n"
             f"Required columns: {feature_columns}\n"
             f"Available columns: {list(df_column_filtered.columns)}"
         )
 
-    # Create filter mask
+    # Create filter mask (vectorized operations)
     mask = df_column_filtered["logid"].isin(simple_log_ids)
-    for logid, detail_code in tuple_log_ids:
-        mask |= (df_column_filtered["logid"] == logid) & (
-            df_column_filtered["log_detail_code"] == detail_code
-        )
 
-    # Apply the mask
-    df_result = df_column_filtered[mask].copy()
+    # Build tuple condition more efficiently
+    if tuple_log_ids:
+        tuple_masks = [
+            (df_column_filtered["logid"] == logid)
+            & (df_column_filtered["log_detail_code"] == detail_code)
+            for logid, detail_code in tuple_log_ids
+        ]
+        if tuple_masks:
+            # Combine all tuple masks with OR
+            tuple_mask_combined = tuple_masks[0]
+            for tm in tuple_masks[1:]:
+                tuple_mask_combined |= tm
+            mask |= tuple_mask_combined
 
-    # Validation checks
+    # Apply the mask - use loc to avoid SettingWithCopyWarning later
+    df_result = df_column_filtered.loc[mask].copy()
+
+    # Fast validation checks
     # Check 1: Ensure we have non-empty rows
-    if len(df_result) == 0:
+    if df_result.empty:
         return None
 
-    # Check 2: Ensure at least one session value is > 0
-    if (df_result["session"] <= 0).all():
+    # Check 2: Ensure at least one session value is > 0 (use any() for early exit)
+    if not (df_result["session"] > 0).any():
         return None
 
     # Check 3: Validate and convert time format if needed
-    # Sample a few rows to check time format (checking all can be slow)
-    sample_size = min(100, len(df_result))
-    time_sample = df_result["time"].sample(n=sample_size, random_state=42)
-
-    invalid_times = [t for t in time_sample if not validate_time_format(t)]
-    if invalid_times:
-        df_result = convert_time_format(df_result)
-
-        # Verify conversion was successful
-        time_sample_after = df_result["time"].sample(
-            n=min(10, len(df_result)), random_state=42
-        )
-        still_invalid = [t for t in time_sample_after if not validate_time_format(t)]
-        if still_invalid:
+    # Just check first row - if it's valid, assume rest are too (much faster)
+    # pd.to_datetime with errors='coerce' will handle conversion anyway
+    first_time = str(df_result["time"].iloc[0])
+    if not validate_time_format(first_time):
+        # Try conversion
+        try:
+            df_result["time"] = (
+                pd.to_datetime(df_result["time"], errors="coerce")
+                .dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+                .str[:-3]
+            )
+            # Check if conversion resulted in NaT
+            if df_result["time"].isna().any():
+                return None
+        except Exception:
             return None
 
     return df_result
 
 
-def preprocess_player_logs(df):
+def preprocess_player_logs(df, df_unfiltered=None):
     """
     Preprocess player log data by grouping by session and creating features.
 
     Args:
         df: DataFrame containing filtered player logs
+        df_unfiltered: DataFrame containing all unfiltered logs (for accurate session duration)
 
     Returns:
         DataFrame with sessions as rows and log counts as features
     """
-    # Parse timestamp column
-    df["timestamp"] = pd.to_datetime(df["time"])
-    df = df.drop(columns=["time"])  # Remove original 'time' column after renaming
+    # Parse timestamp column (in-place to avoid copy)
+    df["timestamp"] = pd.to_datetime(
+        df["time"], format="%Y-%m-%d %H:%M:%S.%f", errors="coerce"
+    )
+    df.drop(columns=["time"], inplace=True)
+
+    # Add date column to handle session ID reuse across days
+    df["session_date"] = df["timestamp"].dt.date
+
+    # If we have unfiltered data, calculate actual session boundaries using vectorized operations
+    session_boundaries = None
+    if df_unfiltered is not None:
+        # Parse timestamps for unfiltered data (in-place)
+        df_unfiltered["timestamp"] = pd.to_datetime(
+            df_unfiltered["time"], format="%Y-%m-%d %H:%M:%S.%f", errors="coerce"
+        )
+
+        # Add date column to handle session ID reuse across days
+        df_unfiltered["session_date"] = df_unfiltered["timestamp"].dt.date
+
+        # Filter to valid sessions (session > 0) and group efficiently
+        # Group by BOTH session AND date to handle session ID reuse
+        valid_sessions = df_unfiltered[df_unfiltered["session"] > 0]
+
+        # Use groupby with agg for vectorized computation
+        session_boundaries = valid_sessions.groupby(
+            ["session", "session_date"], sort=False
+        ).agg({"timestamp": ["min", "max"], "actor_account_id": "first"})
+
+        # Flatten multi-level columns
+        session_boundaries.columns = [
+            "first_timestamp",
+            "last_timestamp",
+            "actor_account_id",
+        ]
+        session_boundaries = session_boundaries.to_dict("index")
 
     # Handle logid 1012 (DeletePC) which appears with session=0
-    # These need to be assigned to the next available session based on timestamp
     session_zero_mask = df["session"] == 0
-    deletepc_session_zero = df[session_zero_mask & (df["logid"] == 1012)].copy()
+    deletepc_mask = session_zero_mask & (df["logid"] == 1012)
 
-    # Get valid sessions (non-zero)
-    df_valid = df[~session_zero_mask].copy()
+    # Get valid sessions (non-zero) - use boolean indexing without copy first
+    has_deletepc = deletepc_mask.any()
 
-    # For each DeletePC with session=0, find the next session based on timestamp
-    if not deletepc_session_zero.empty and not df_valid.empty:
-        # Sort both by timestamp
-        deletepc_session_zero = deletepc_session_zero.sort_values("timestamp")
-        df_valid = df_valid.sort_values("timestamp")
+    if has_deletepc:
+        deletepc_session_zero = df[deletepc_mask].copy()
+        df_valid = df[~session_zero_mask].copy()
 
-        # For each DeletePC event, find which session it should belong to
-        for idx, deletepc_row in deletepc_session_zero.iterrows():
-            deletepc_timestamp = deletepc_row["timestamp"]
+        if not deletepc_session_zero.empty and not df_valid.empty:
+            # Sort both by timestamp
+            deletepc_session_zero.sort_values("timestamp", inplace=True)
+            df_valid.sort_values("timestamp", inplace=True)
 
-            # Find the next session after this timestamp
-            future_sessions = df_valid[df_valid["timestamp"] >= deletepc_timestamp]
+            # Use merge_asof for efficient timestamp-based matching
+            deletepc_session_zero_reset = deletepc_session_zero.reset_index(drop=True)
+            df_valid_sessions = (
+                df_valid[["timestamp", "session"]]
+                .drop_duplicates("session")
+                .sort_values("timestamp")
+            )
 
-            if not future_sessions.empty:
-                # Assign to the first session that occurs at or after this timestamp
-                next_session = future_sessions.iloc[0]["session"]
+            # Find next session for each DeletePC event
+            matched = pd.merge_asof(
+                deletepc_session_zero_reset[["timestamp"]],
+                df_valid_sessions,
+                on="timestamp",
+                direction="forward",
+            )
 
-                # Create a new row for this DeletePC event with the proper session
-                new_row = deletepc_row.copy()
-                new_row["session"] = next_session
+            # Update session IDs for DeletePC events
+            deletepc_session_zero_reset["session"] = matched["session"]
+
+            # Filter out any that didn't match (no future session)
+            deletepc_with_session = deletepc_session_zero_reset[
+                deletepc_session_zero_reset["session"].notna()
+            ]
+
+            # Concatenate once instead of in a loop
+            if not deletepc_with_session.empty:
                 df_valid = pd.concat(
-                    [df_valid, pd.DataFrame([new_row])], ignore_index=True
+                    [df_valid, deletepc_with_session], ignore_index=True
                 )
+    else:
+        # No DeletePC to handle, just filter out session=0
+        df_valid = df[~session_zero_mask]
 
-    # Group by session
-    grouped = df_valid.groupby("session")
+    # Use vectorized operations for aggregation instead of iterating
+    # First, get the latest actor_level per session+date combination
+    df_valid_sorted = df_valid.sort_values(["session", "session_date", "timestamp"])
+    latest_levels = df_valid_sorted.groupby(["session", "session_date"], sort=False)[
+        "actor_level"
+    ].last()
 
-    # Initialize result dictionary
-    result_data = []
+    # Create pivot table for log counts (more efficient than looping)
+    logid_to_label = dict(logid_label_mapping)
 
-    for session_id, session_df in grouped:
-        # Sort session_df by timestamp to ensure we get the correct timestamps
-        session_df_sorted = session_df.sort_values("timestamp")
+    # Filter to only the logids we care about
+    df_valid_filtered = df_valid[df_valid["logid"].isin(logid_to_label.keys())]
 
-        first_timestamp = session_df_sorted["timestamp"].iloc[0]
-        last_timestamp = session_df_sorted["timestamp"].iloc[-1]
+    # Count occurrences using crosstab (vectorized)
+    # Need to create a composite index for session+date
+    if not df_valid_filtered.empty:
+        df_valid_filtered["session_composite"] = (
+            df_valid_filtered["session"].astype(str)
+            + "_"
+            + df_valid_filtered["session_date"].astype(str)
+        )
+        log_counts = pd.crosstab(
+            df_valid_filtered["session_composite"], df_valid_filtered["logid"]
+        )
+        # Rename columns to labels (convert col to int if needed)
+        log_counts.columns = [
+            logid_to_label.get(int(col), f"logid_{col}") for col in log_counts.columns
+        ]
+    else:
+        log_counts = pd.DataFrame()
 
-        # Calculate session duration in minutes (rounded to nearest integer for accuracy)
-        session_duration_seconds = (last_timestamp - first_timestamp).total_seconds()
-        session_duration_minutes = int(round(session_duration_seconds / 60))
+    # Get session timestamps from filtered data (group by session+date)
+    filtered_session_stats = df_valid.groupby(
+        ["session", "session_date"], sort=False
+    ).agg({"timestamp": ["min", "max"], "actor_account_id": "first"})
+    filtered_session_stats.columns = [
+        "first_timestamp_filtered",
+        "last_timestamp_filtered",
+        "actor_account_id",
+    ]
 
-        session_record = {
-            "session": session_id,
-            "actor_account_id": session_df_sorted["actor_account_id"].iloc[0],
-            "last_timestamp": last_timestamp,
-            "first_timestamp": first_timestamp,
-            "session_duration_minutes": session_duration_minutes,
-            "actor_level": session_df_sorted["actor_level"].iloc[
-                -1
-            ],  # Latest level in session
-        }
+    # Use actual session boundaries if available
+    if session_boundaries is not None:
+        boundaries_df = pd.DataFrame.from_dict(session_boundaries, orient="index")
+        # The index is now a tuple (session, session_date)
+        # Ensure the index names match for proper joining
+        boundaries_df.index.names = ["session", "session_date"]
+        # Merge with filtered stats, preferring boundary data
+        result_df = filtered_session_stats.join(
+            boundaries_df, how="left", rsuffix="_boundary"
+        )
 
-        # Count occurrences of each logid
-        logid_counts = session_df_sorted["logid"].value_counts()
+        # Use boundary timestamps where available, else fall back to filtered
+        result_df["first_timestamp"] = result_df["first_timestamp"].fillna(
+            result_df["first_timestamp_filtered"]
+        )
+        result_df["last_timestamp"] = result_df["last_timestamp"].fillna(
+            result_df["last_timestamp_filtered"]
+        )
+        result_df["actor_account_id"] = result_df["actor_account_id_boundary"].fillna(
+            result_df["actor_account_id"]
+        )
 
-        # Create columns for each log type
-        for logid, label in logid_label_mapping:
-            count = logid_counts.get(logid, 0)
-            session_record[label] = count
+        # Clean up temporary columns
+        result_df.drop(
+            columns=[
+                "first_timestamp_filtered",
+                "last_timestamp_filtered",
+                "actor_account_id_boundary",
+            ],
+            inplace=True,
+        )
+    else:
+        result_df = filtered_session_stats.copy()
+        result_df.columns = ["first_timestamp", "last_timestamp", "actor_account_id"]
 
-        result_data.append(session_record)
-
-    # Create result dataframe
-    result_df = pd.DataFrame(result_data)
-
-    # Sort by last_timestamp to calculate days_since_last_login
-    result_df = result_df.sort_values("last_timestamp").reset_index(drop=True)
-
-    # Calculate days_since_last_login (time between end of previous session and start of current session)
-    days_since_last_login = []
-    for i in range(len(result_df)):
-        if i == 0:
-            # First session has no previous session, use 0
-            days_since_last_login.append(0)
-        else:
-            # Calculate time between previous session's last_timestamp and current session's first_timestamp
-            prev_session_last_timestamp = result_df.iloc[i - 1]["last_timestamp"]
-            curr_session_first_timestamp = result_df.iloc[i]["first_timestamp"]
-            time_diff_days = (
-                pd.to_datetime(curr_session_first_timestamp)
-                - pd.to_datetime(prev_session_last_timestamp)
-            ).total_seconds() / 86400  # Convert to days
-            # Convert to integer days (floor)
-            days_since_last_login.append(int(time_diff_days))
-
-    result_df["days_since_last_login"] = days_since_last_login
-
-    # Convert days_since_last_login to proper integer type (Int64 allows NaN for first session)
-    result_df["days_since_last_login"] = result_df["days_since_last_login"].astype(
-        "Int64"
+    # Calculate session duration (vectorized)
+    result_df["session_duration_minutes"] = (
+        (
+            (
+                result_df["last_timestamp"] - result_df["first_timestamp"]
+            ).dt.total_seconds()
+            / 60
+        )
+        .round()
+        .astype(int)
     )
 
-    # Drop the session column and first_timestamp
-    result_df = result_df.drop(columns=["session", "first_timestamp"])
+    # Join with latest levels
+    result_df = result_df.join(latest_levels, how="left")
+    result_df.rename(columns={"actor_level": "actor_level"}, inplace=True)
 
-    # Reorder columns: last_timestamp first, then actor_account_id, session_duration_minutes, days_since_last_login, actor_level, then all log columns
+    # Join with log counts - need to create composite key for the join
+    if not log_counts.empty:
+        # Create composite key in result_df to match log_counts index
+        result_df_reset = result_df.reset_index()
+        result_df_reset["session_composite"] = (
+            result_df_reset["session"].astype(str)
+            + "_"
+            + result_df_reset["session_date"].astype(str)
+        )
+        result_df_reset.set_index("session_composite", inplace=True)
+        result_df = result_df_reset.join(log_counts, how="left")
+        # Drop the composite key column but keep session and session_date
+        result_df.reset_index(drop=True, inplace=True)
+    else:
+        # No log counts, just reset the multi-level index
+        result_df.reset_index(inplace=True)
+
+    # Fill missing log counts with 0
+    for logid, label in logid_label_mapping:
+        if label not in result_df.columns:
+            result_df[label] = 0
+        else:
+            result_df[label] = result_df[label].fillna(0).astype(int)
+
+    # Sort by last_timestamp for chronological order
+    result_df.sort_values("last_timestamp", inplace=True)
+    result_df.reset_index(drop=True, inplace=True)
+
+    # Note: days_since_last_login will be calculated later after combining all files
+    # This ensures it's calculated per-player across all sessions
+
+    # Drop the session and session_date columns but keep first_timestamp for later calculation
+    result_df = result_df.drop(columns=["session", "session_date"])
+
+    # Reorder columns: first_timestamp, last_timestamp, then actor_account_id, session_duration_minutes, actor_level, then all log columns
+    # Note: days_since_last_login will be added later after combining all files
     log_columns = [label for _, label in logid_label_mapping]
     column_order = [
+        "first_timestamp",
         "last_timestamp",
         "actor_account_id",
         "session_duration_minutes",
-        "days_since_last_login",
         "actor_level",
     ] + log_columns
     result_df = result_df[column_order]
@@ -357,7 +472,13 @@ if __name__ == "__main__":
                 )
 
             # Get original row count
-            df_column_filtered = pd.read_csv(csv_file, usecols=feature_columns)
+            # Force actor_account_id to string to avoid float/scientific notation issues
+            df_column_filtered = pd.read_csv(
+                csv_file,
+                usecols=feature_columns,
+                dtype={"actor_account_id": str},
+                low_memory=False,
+            )
             original_rows = len(df_column_filtered)
             total_original_rows += original_rows
 
@@ -370,7 +491,8 @@ if __name__ == "__main__":
                 continue
 
             # PHASE 2: Feature engineering
-            processed_df = preprocess_player_logs(filtered_df)
+            # Pass the unfiltered data to calculate accurate session durations
+            processed_df = preprocess_player_logs(filtered_df, df_column_filtered)
             all_processed_data.append(processed_df)
 
             # Track filtered rows
@@ -418,6 +540,43 @@ if __name__ == "__main__":
         print("=" * 70)
 
         combined_df = pd.concat(all_processed_data, ignore_index=True)
+
+        # Calculate days_since_last_login per player (vectorized)
+        print("Calculating days_since_last_login per player...")
+
+        # Sort by player and first_timestamp (when session started, not ended)
+        # This ensures we calculate time since previous session started, not ended
+        combined_df.sort_values(["actor_account_id", "first_timestamp"], inplace=True)
+        combined_df.reset_index(drop=True, inplace=True)
+
+        # Group by player and calculate days since last login
+        # Use first_timestamp for both previous and current session
+        combined_df["prev_session_start"] = combined_df.groupby("actor_account_id")[
+            "first_timestamp"
+        ].shift(1)
+
+        # Calculate time difference in days (from previous session start to current session start)
+        time_diff = (
+            combined_df["first_timestamp"] - combined_df["prev_session_start"]
+        ).dt.total_seconds() / 86400
+
+        # First session per player gets 0, others get the floored integer
+        combined_df["days_since_last_login"] = (
+            time_diff.fillna(0).astype(int).astype("Int64")
+        )
+
+        # Drop temporary columns
+        combined_df.drop(
+            columns=["prev_session_start", "first_timestamp"], inplace=True
+        )
+
+        # Reorder columns with days_since_last_login in the right position
+        cols = combined_df.columns.tolist()
+        # Move days_since_last_login after session_duration_minutes
+        cols.remove("days_since_last_login")
+        idx = cols.index("session_duration_minutes") + 1
+        cols.insert(idx, "days_since_last_login")
+        combined_df = combined_df[cols]
 
         # Save combined result
         output_file = output_dir / "all_sessions_processed.csv"
