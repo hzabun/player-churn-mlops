@@ -16,8 +16,10 @@
 
 ## Log id mappings
 
+- 1012 DeletePC
 - 1013 PcLevelUp
 - 1101 InviteParty
+- 1102 JoinParty
 - 1103 RefuseParty
 - 1202 Die
 - 1404 DuelEnd(PC)
