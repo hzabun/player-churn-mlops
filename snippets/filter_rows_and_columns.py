@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -41,6 +42,41 @@ tuple_log_ids = [
 ]
 
 
+def validate_time_format(time_str):
+    """
+    Validate that time string matches the expected format: YYYY-MM-DD HH:MM:SS.mmm
+
+    Args:
+        time_str: Time string to validate
+
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    pattern = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$"
+    return bool(re.match(pattern, str(time_str)))
+
+
+def convert_time_format(df):
+    """
+    Convert time column to the expected format: YYYY-MM-DD HH:MM:SS.mmm
+
+    Args:
+        df: DataFrame with 'time' column
+
+    Returns:
+        DataFrame with converted time format
+    """
+    try:
+        # Try to parse the time column as datetime
+        df["time"] = pd.to_datetime(df["time"])
+        # Format to the expected format with milliseconds
+        df["time"] = df["time"].dt.strftime("%Y-%m-%d %H:%M:%S.%f").str[:-3]
+        return df
+    except Exception as e:
+        print(f"Error converting time format: {e}")
+        return df
+
+
 def filter_csv(input_path, output_path=None):
     """
     Filter CSV file by specified column and logid/log_detail_code combinations.
@@ -66,7 +102,7 @@ def filter_csv(input_path, output_path=None):
             f"Available columns: {list(df_header.columns)}"
         )
 
-    # Read only the columns we need (avoids mixed dtype warnings and is faster)
+    # Read only the columns we need
     df_filtered = pd.read_csv(input_path, usecols=feature_columns)
 
     # Create filter mask
@@ -79,7 +115,46 @@ def filter_csv(input_path, output_path=None):
     # Apply the mask
     df_result = df_filtered[mask].copy()
 
-    # Save to output file if specified
+    # Additional validations before saving
+    if output_path:
+        # Check 1: Ensure we have non-empty rows
+        if len(df_result) == 0:
+            print(f"Skipping {input_path.name}: No rows after filtering")
+            return None
+
+        # Check 2: Ensure at least one session values is > 0
+        if (df_result["session"] <= 0).all():
+            print(f"Skipping {input_path.name}: Contains no session value > 0")
+            return None
+
+        # Check 3: Validate and convert time format if needed
+        # Sample a few rows to check time format (checking all can be slow)
+        sample_size = min(100, len(df_result))
+        time_sample = df_result["time"].sample(n=sample_size, random_state=42)
+
+        invalid_times = [t for t in time_sample if not validate_time_format(t)]
+        if invalid_times:
+            print(
+                f"Converting time format for {input_path.name}. Examples of original format: {invalid_times[:3]}"
+            )
+            df_result = convert_time_format(df_result)
+
+            # Verify conversion was successful
+            time_sample_after = df_result["time"].sample(
+                n=min(10, len(df_result)), random_state=42
+            )
+            still_invalid = [
+                t for t in time_sample_after if not validate_time_format(t)
+            ]
+            if still_invalid:
+                print(
+                    f"Error: Failed to convert time format for {input_path.name}. Examples: {still_invalid[:3]}"
+                )
+                return None
+            else:
+                print(f"Successfully converted time format for {input_path.name}")
+
+    # Save to output file if specified and all validations passed
     if output_path:
         df_result.to_csv(output_path, index=False)
         print(f"Filtered data saved to: {output_path}")
@@ -117,6 +192,7 @@ if __name__ == "__main__":
     total_filtered_rows = 0
     successful_files = 0
     failed_files = 0
+    skipped_files = 0
     errors = []
 
     for idx, csv_file in enumerate(csv_files, 1):
@@ -125,21 +201,24 @@ if __name__ == "__main__":
             if idx == 1 or idx == len(csv_files) or idx % 100 == 0:
                 print(f"Processing file {idx}/{len(csv_files)}...", end="\r")
 
-            # Filter the data
-            filtered_df = filter_csv(csv_file)
-
-            # Get statistics (more efficient - we already have filtered_df)
+            # Get original row count
             original_rows = len(pd.read_csv(csv_file, usecols=feature_columns))
-            filtered_rows = len(filtered_df)
-
             total_original_rows += original_rows
-            total_filtered_rows += filtered_rows
 
-            # Save to output file
+            # Output file path
             output_file = processed_data_dir / f"{csv_file.name}"
-            filtered_df.to_csv(output_file, index=False)
 
-            successful_files += 1
+            # Filter the data
+            filtered_df = filter_csv(csv_file, output_path=output_file)
+
+            # Check if filtering was successful
+            if filtered_df is not None:
+                filtered_rows = len(filtered_df)
+                total_filtered_rows += filtered_rows
+                successful_files += 1
+            else:
+                # File was skipped due to validation failures
+                skipped_files += 1
 
         except Exception as e:
             errors.append((csv_file.name, str(e)))
@@ -152,6 +231,7 @@ if __name__ == "__main__":
     print(f"{'='*60}")
     print(f"SUMMARY:")
     print(f"  Successfully processed: {successful_files} files")
+    print(f"  Skipped (validation failed): {skipped_files} files")
     print(f"  Failed: {failed_files} files")
     print(f"  Total original rows: {total_original_rows:,}")
     if total_original_rows > 0:
