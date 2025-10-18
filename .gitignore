@@ -1,3 +1,4 @@
 /data
 .DS_Store
 /docs/log_schema
+__pycache__
