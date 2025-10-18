@@ -14,7 +14,7 @@ feature_columns = [
     "actor_level",
 ]
 
-# Simple logids (match by logid only) - using set for O(1) lookup
+# Simple logids (match by logid only)
 simple_log_ids = {
     1013,
     1101,
@@ -45,27 +45,27 @@ tuple_log_ids = [
 
 # Log ID to label mapping for feature engineering
 logid_label_mapping = [
-    (1012, "DeletePC"),
-    (1013, "PcLevelUp"),
-    (1101, "InviteParty"),
-    (1103, "RefuseParty"),
-    (1102, "JoinParty"),
-    (1202, "Die"),
-    (1404, "DuelEnd(PC)"),
-    (1406, "DuelEnd(Team)"),
-    (1422, "PartyBattleEnd(Team)"),
-    (2112, "ExpandWarehouse"),
-    (2141, "ChangeItemLook"),
-    (2301, "PutMainAuction"),
-    (2405, "UseGatheringItem"),
-    (5004, "CompleteQuest"),
-    (5011, "CompleteChallengeToday"),
-    (5015, "CompleteChallengeWeek"),
-    (6001, "CreateGuild"),
-    (6002, "DestoryGuild"),
-    (6004, "InviteGuild"),
-    (6005, "JoinGuild"),
-    (6009, "DissmissGuild"),
+    (1012, "delete_pc"),
+    (1013, "pc_level_up"),
+    (1101, "invite_party"),
+    (1103, "refuse_party"),
+    (1102, "join_party"),
+    (1202, "die"),
+    (1404, "duel_end_pc"),
+    (1406, "duel_end_team"),
+    (1422, "party_battle_end_team"),
+    (2112, "expand_warehouse"),
+    (2141, "change_item_look"),
+    (2301, "put_main_auction"),
+    (2405, "use_gathering_item"),
+    (5004, "complete_quest"),
+    (5011, "complete_challenge_today"),
+    (5015, "complete_challenge_week"),
+    (6001, "create_guild"),
+    (6002, "destroy_guild"),
+    (6004, "invite_guild"),
+    (6005, "join_guild"),
+    (6009, "dismiss_guild"),
 ]
 
 
@@ -83,27 +83,6 @@ def validate_time_format(time_str):
     return bool(re.match(pattern, str(time_str)))
 
 
-def convert_time_format(df):
-    """
-    Convert time column to the expected format: YYYY-MM-DD HH:MM:SS.mmm
-
-    Args:
-        df: DataFrame with 'time' column
-
-    Returns:
-        DataFrame with converted time format
-    """
-    try:
-        # Try to parse the time column as datetime
-        df["time"] = pd.to_datetime(df["time"])
-        # Format to the expected format with milliseconds
-        df["time"] = df["time"].dt.strftime("%Y-%m-%d %H:%M:%S.%f").str[:-3]
-        return df
-    except Exception as e:
-        print(f"Error converting time format: {e}")
-        return df
-
-
 def filter_csv(df_column_filtered):
     """
     Filter CSV file by specified column and logid/log_detail_code combinations.
@@ -117,7 +96,6 @@ def filter_csv(df_column_filtered):
     Raises:
         ValueError: If any required columns are missing from the CSV file
     """
-    # Check if all columns exist (use set for faster lookup)
     missing_columns = set(feature_columns) - set(df_column_filtered.columns)
     if missing_columns:
         raise ValueError(
@@ -126,10 +104,8 @@ def filter_csv(df_column_filtered):
             f"Available columns: {list(df_column_filtered.columns)}"
         )
 
-    # Create filter mask (vectorized operations)
     mask = df_column_filtered["logid"].isin(simple_log_ids)
 
-    # Build tuple condition more efficiently
     if tuple_log_ids:
         tuple_masks = [
             (df_column_filtered["logid"] == logid)
@@ -143,10 +119,8 @@ def filter_csv(df_column_filtered):
                 tuple_mask_combined |= tm
             mask |= tuple_mask_combined
 
-    # Apply the mask - use loc to avoid SettingWithCopyWarning later
     df_result = df_column_filtered.loc[mask].copy()
 
-    # Fast validation checks
     # Check 1: Ensure we have non-empty rows
     if df_result.empty:
         return None
@@ -156,8 +130,7 @@ def filter_csv(df_column_filtered):
         return None
 
     # Check 3: Validate and convert time format if needed
-    # Just check first row - if it's valid, assume rest are too (much faster)
-    # pd.to_datetime with errors='coerce' will handle conversion anyway
+    # Just check first row - if it's valid, assume rest are too
     first_time = str(df_result["time"].iloc[0])
     if not validate_time_format(first_time):
         # Try conversion
@@ -187,7 +160,6 @@ def preprocess_player_logs(df, df_unfiltered=None):
     Returns:
         DataFrame with sessions as rows and log counts as features
     """
-    # Parse timestamp column (in-place to avoid copy)
     df["timestamp"] = pd.to_datetime(
         df["time"], format="%Y-%m-%d %H:%M:%S.%f", errors="coerce"
     )
@@ -196,10 +168,9 @@ def preprocess_player_logs(df, df_unfiltered=None):
     # Add date column to handle session ID reuse across days
     df["session_date"] = df["timestamp"].dt.date
 
-    # If we have unfiltered data, calculate actual session boundaries using vectorized operations
+    # If we have unfiltered data, calculate actual session boundaries
     session_boundaries = None
     if df_unfiltered is not None:
-        # Parse timestamps for unfiltered data (in-place)
         df_unfiltered["timestamp"] = pd.to_datetime(
             df_unfiltered["time"], format="%Y-%m-%d %H:%M:%S.%f", errors="coerce"
         )
@@ -210,8 +181,6 @@ def preprocess_player_logs(df, df_unfiltered=None):
         # Filter to valid sessions (session > 0) and group efficiently
         # Group by BOTH session AND date to handle session ID reuse
         valid_sessions = df_unfiltered[df_unfiltered["session"] > 0]
-
-        # Use groupby with agg for vectorized computation
         session_boundaries = valid_sessions.groupby(
             ["session", "session_date"], sort=False
         ).agg({"timestamp": ["min", "max"], "actor_account_id": "first"})
@@ -228,7 +197,6 @@ def preprocess_player_logs(df, df_unfiltered=None):
     session_zero_mask = df["session"] == 0
     deletepc_mask = session_zero_mask & (df["logid"] == 1012)
 
-    # Get valid sessions (non-zero) - use boolean indexing without copy first
     has_deletepc = deletepc_mask.any()
 
     if has_deletepc:
@@ -236,11 +204,9 @@ def preprocess_player_logs(df, df_unfiltered=None):
         df_valid = df[~session_zero_mask].copy()
 
         if not deletepc_session_zero.empty and not df_valid.empty:
-            # Sort both by timestamp
             deletepc_session_zero.sort_values("timestamp", inplace=True)
             df_valid.sort_values("timestamp", inplace=True)
 
-            # Use merge_asof for efficient timestamp-based matching
             deletepc_session_zero_reset = deletepc_session_zero.reset_index(drop=True)
             df_valid_sessions = (
                 df_valid[["timestamp", "session"]]
@@ -255,8 +221,6 @@ def preprocess_player_logs(df, df_unfiltered=None):
                 on="timestamp",
                 direction="forward",
             )
-
-            # Update session IDs for DeletePC events
             deletepc_session_zero_reset["session"] = matched["session"]
 
             # Filter out any that didn't match (no future session)
@@ -264,7 +228,6 @@ def preprocess_player_logs(df, df_unfiltered=None):
                 deletepc_session_zero_reset["session"].notna()
             ]
 
-            # Concatenate once instead of in a loop
             if not deletepc_with_session.empty:
                 df_valid = pd.concat(
                     [df_valid, deletepc_with_session], ignore_index=True
@@ -273,21 +236,17 @@ def preprocess_player_logs(df, df_unfiltered=None):
         # No DeletePC to handle, just filter out session=0
         df_valid = df[~session_zero_mask]
 
-    # Use vectorized operations for aggregation instead of iterating
     # First, get the latest actor_level per session+date combination
     df_valid_sorted = df_valid.sort_values(["session", "session_date", "timestamp"])
     latest_levels = df_valid_sorted.groupby(["session", "session_date"], sort=False)[
         "actor_level"
     ].last()
 
-    # Create pivot table for log counts (more efficient than looping)
-    logid_to_label = dict(logid_label_mapping)
-
     # Filter to only the logids we care about
+    logid_to_label = dict(logid_label_mapping)
     df_valid_filtered = df_valid[df_valid["logid"].isin(logid_to_label.keys())]
 
-    # Count occurrences using crosstab (vectorized)
-    # Need to create a composite index for session+date
+    # Count occurrences using crosstab via composite index session+date
     if not df_valid_filtered.empty:
         df_valid_filtered["session_composite"] = (
             df_valid_filtered["session"].astype(str)
@@ -314,11 +273,8 @@ def preprocess_player_logs(df, df_unfiltered=None):
         "actor_account_id",
     ]
 
-    # Use actual session boundaries if available
     if session_boundaries is not None:
         boundaries_df = pd.DataFrame.from_dict(session_boundaries, orient="index")
-        # The index is now a tuple (session, session_date)
-        # Ensure the index names match for proper joining
         boundaries_df.index.names = ["session", "session_date"]
         # Merge with filtered stats, preferring boundary data
         result_df = filtered_session_stats.join(
@@ -349,7 +305,6 @@ def preprocess_player_logs(df, df_unfiltered=None):
         result_df = filtered_session_stats.copy()
         result_df.columns = ["first_timestamp", "last_timestamp", "actor_account_id"]
 
-    # Calculate session duration (vectorized)
     result_df["session_duration_minutes"] = (
         (
             (
@@ -365,7 +320,7 @@ def preprocess_player_logs(df, df_unfiltered=None):
     result_df = result_df.join(latest_levels, how="left")
     result_df.rename(columns={"actor_level": "actor_level"}, inplace=True)
 
-    # Join with log counts - need to create composite key for the join
+    # Join with log counts
     if not log_counts.empty:
         # Create composite key in result_df to match log_counts index
         result_df_reset = result_df.reset_index()
@@ -389,18 +344,11 @@ def preprocess_player_logs(df, df_unfiltered=None):
         else:
             result_df[label] = result_df[label].fillna(0).astype(int)
 
-    # Sort by last_timestamp for chronological order
     result_df.sort_values("last_timestamp", inplace=True)
     result_df.reset_index(drop=True, inplace=True)
 
-    # Note: days_since_last_login will be calculated later after combining all files
-    # This ensures it's calculated per-player across all sessions
-
-    # Drop the session and session_date columns but keep first_timestamp for later calculation
     result_df = result_df.drop(columns=["session", "session_date"])
 
-    # Reorder columns: first_timestamp, last_timestamp, then actor_account_id, session_duration_minutes, actor_level, then all log columns
-    # Note: days_since_last_login will be added later after combining all files
     log_columns = [label for _, label in logid_label_mapping]
     column_order = [
         "first_timestamp",
@@ -415,20 +363,16 @@ def preprocess_player_logs(df, df_unfiltered=None):
 
 
 if __name__ == "__main__":
-    # Setup paths
     raw_data_dir = Path("data/raw")
     output_dir = Path("data/processed")
 
-    # Create output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Check if raw data directory exists
     if not raw_data_dir.exists():
         print(f"Error: Directory not found: {raw_data_dir}")
         print("Please ensure the data/raw directory exists.")
         exit(1)
 
-    # Get all CSV files in the raw data directory
     csv_files = list(raw_data_dir.glob("*.csv"))
 
     if not csv_files:
@@ -450,7 +394,6 @@ if __name__ == "__main__":
     print("=" * 70)
     print()
 
-    # Statistics tracking
     total_original_rows = 0
     total_filtered_rows = 0
     successful_files = 0
@@ -460,7 +403,6 @@ if __name__ == "__main__":
     errors = []
     total_files = len(csv_files)
 
-    # Process each file through both phases
     for idx, csv_file in enumerate(csv_files, 1):
         try:
             # Show progress every 100 files or on first/last file
@@ -471,8 +413,6 @@ if __name__ == "__main__":
                     end="\r",
                 )
 
-            # Get original row count
-            # Force actor_account_id to string to avoid float/scientific notation issues
             df_column_filtered = pd.read_csv(
                 csv_file,
                 usecols=feature_columns,
@@ -508,7 +448,6 @@ if __name__ == "__main__":
     # Clear the progress line
     print(" " * 120, end="\r")
 
-    # Print processing summary
     print()
     print("=" * 70)
     print("Processing Summary")
@@ -522,7 +461,6 @@ if __name__ == "__main__":
             f"  Total filtered rows: {total_filtered_rows:,} ({total_filtered_rows/total_original_rows*100:.1f}%)"
         )
 
-    # Show errors if any
     if errors:
         print(f"\nErrors ({len(errors)}):")
         for filename, error in errors[:10]:  # Show first 10 errors
@@ -541,7 +479,6 @@ if __name__ == "__main__":
 
         combined_df = pd.concat(all_processed_data, ignore_index=True)
 
-        # Calculate days_since_last_login per player (vectorized)
         print("Calculating days_since_last_login per player...")
 
         # Sort by player and first_timestamp (when session started, not ended)
@@ -594,7 +531,6 @@ if __name__ == "__main__":
         for i, col in enumerate(combined_df.columns, 1):
             print(f"  {i:2d}. {col}")
 
-        # Show some statistics
         print()
         print("=" * 70)
         print("Dataset Statistics")
