@@ -282,14 +282,10 @@ def aggregate_to_players(sessions) -> pd.DataFrame:
 
 
 def process_file(path):
-    """Process a single CSV file."""
+    """Process a single Parquet file."""
     try:
-        df = pd.read_csv(
-            path,
-            usecols=feature_columns,
-            dtype={"actor_account_id": str},
-            low_memory=False,
-        )
+        df = pd.read_parquet(path, columns=feature_columns)
+        df["actor_account_id"] = df["actor_account_id"].astype(str)
         orig_rows = len(df)
         result = filter_and_process_session(df, df)
         return result, orig_rows, None
@@ -298,7 +294,7 @@ def process_file(path):
 
 
 if __name__ == "__main__":
-    raw_dir = Path("data/raw")
+    raw_dir = Path("data/raw_parquet")
     output_dir = Path("data/processed")
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -306,22 +302,22 @@ if __name__ == "__main__":
         print(f"Error: {raw_dir} not found")
         exit(1)
 
-    csv_files = list(raw_dir.glob("*.csv"))
-    if not csv_files:
-        print(f"No CSV files in {raw_dir}")
+    parquet_files = list(raw_dir.glob("*.parquet"))
+    if not parquet_files:
+        print(f"No Parquet files in {raw_dir}")
         exit(1)
 
     print("=" * 70)
     print("Player Churn Preprocessing Pipeline")
     print("=" * 70)
-    print(f"Found {len(csv_files)} files\n")
+    print(f"Found {len(parquet_files)} Parquet files\n")
 
     all_sessions = []
     success = skipped = failed = 0
-    for i, f in enumerate(csv_files, 1):
-        if i == 1 or i == len(csv_files) or i % 100 == 0:
+    for i, f in enumerate(parquet_files, 1):
+        if i == 1 or i == len(parquet_files) or i % 100 == 0:
             print(
-                f"Processing {i}/{len(csv_files)} ({i/len(csv_files)*100:.1f}%)...",
+                f"Processing {i}/{len(parquet_files)} ({i/len(parquet_files)*100:.1f}%)...",
                 end="\r",
             )
         result, _, error = process_file(f)
@@ -343,9 +339,8 @@ if __name__ == "__main__":
     combined = pd.concat(all_sessions, ignore_index=True)
     players = aggregate_to_players(combined)
 
-    output = output_dir / "player_features.csv"
-    # players.to_parquet(output, index=False, engine="pyarrow", compression="snappy")
-    players.to_csv(output)
+    output = output_dir / "player_features.parquet"
+    players.to_parquet(output, index=False, engine="pyarrow", compression="snappy")
 
     print("\n" + "=" * 70)
     print(f"✓ Saved: {output}")
