@@ -515,9 +515,14 @@ if __name__ == "__main__":
         cols.insert(idx, "days_since_last_login")
         combined_df = combined_df[cols]
 
-        # Save combined result
-        output_file = output_dir / "all_sessions_processed.csv"
-        combined_df.to_csv(output_file, index=False)
+        combined_df.rename(
+            columns={"last_timestamp": "session_timestamp"}, inplace=True
+        )
+
+        output_file = output_dir / "all_sessions_processed.parquet"
+        combined_df.to_parquet(
+            output_file, index=False, engine="pyarrow", compression="snappy"
+        )
 
         print()
         print("=" * 70)
