@@ -151,7 +151,6 @@ def parse_timestamps(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with 'timestamp' and 'session_date' columns added
     """
-    df = df.copy()
     df["timestamp"] = pd.to_datetime(df["time"], format="%Y-%m-%d %H:%M:%S.%f")
     df["session_date"] = df["timestamp"].dt.date
     return df
@@ -167,7 +166,6 @@ def get_session_boundaries(df_unfiltered: pd.DataFrame) -> pd.DataFrame:
         DataFrame with session boundaries indexed by (session, session_date)
     """
     # Parse timestamps
-    df_unfiltered = df_unfiltered.copy()
     df_unfiltered["timestamp"] = pd.to_datetime(
         df_unfiltered["time"], format="%Y-%m-%d %H:%M:%S.%f"
     )
@@ -271,7 +269,7 @@ def add_event_counts_and_finalize(
     """
     # Count events per session
     logid_map = dict(logid_label_mapping)
-    df_events = df_valid[df_valid["logid"].isin(logid_map.keys())].copy()
+    df_events = df_valid[df_valid["logid"].isin(logid_map.keys())]
 
     if not df_events.empty:
         df_events["key"] = (
@@ -485,9 +483,7 @@ def aggregate_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
     Returns:
         Player-level DataFrame with aggregated features
     """
-    sessions = sessions.copy()
     sessions["last_timestamp"] = pd.to_datetime(sessions["last_timestamp"])
-
     return aggregate_and_transform_to_players(sessions)
 
 
