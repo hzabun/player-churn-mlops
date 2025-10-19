@@ -511,19 +511,31 @@ def process_file(path: Path) -> Tuple[Optional[pd.DataFrame], int, Optional[str]
         return None, 0, str(e)
 
 
-if __name__ == "__main__":
-    raw_dir = Path("data/raw_parquet")
-    output_dir = Path("data/processed")
+def preprocess_all_players(
+    raw_dir: Path = Path("data/raw_parquet"),
+    output_dir: Path = Path("data/processed"),
+    output_filename: str = "player_features.parquet",
+) -> Optional[pd.DataFrame]:
+    """Run the complete preprocessing pipeline.
+
+    Args:
+        raw_dir: Directory containing raw Parquet files
+        output_dir: Directory to save processed output
+        output_filename: Name of output file
+
+    Returns:
+        Processed player-level DataFrame or None if processing fails
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not raw_dir.exists():
         print(f"Error: {raw_dir} not found")
-        exit(1)
+        return None
 
     parquet_files = list(raw_dir.glob("*.parquet"))
     if not parquet_files:
         print(f"No Parquet files in {raw_dir}")
-        exit(1)
+        return None
 
     print("=" * 70)
     print("Player Churn Preprocessing Pipeline")
@@ -551,13 +563,13 @@ if __name__ == "__main__":
 
     if not all_sessions:
         print("No data processed")
-        exit(1)
+        return None
 
     print("Aggregating to player level...")
     combined = pd.concat(all_sessions, ignore_index=True)
     players = aggregate_to_players(combined)
 
-    output = output_dir / "player_features.parquet"
+    output = output_dir / output_filename
     players.to_parquet(output, index=False, engine="pyarrow", compression="snappy")
 
     print("\n" + "=" * 70)
