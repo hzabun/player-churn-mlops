@@ -101,8 +101,11 @@ def validate_raw_data(df: pd.DataFrame) -> Tuple[bool, str]:
         return False, "Column 'session' contains negative values"
     if (df["actor_level"] < 0).any():
         return False, "Column 'actor_level' contains negative values"
-    if (df["actor_level"] > 100).any():
-        return False, "Column 'actor_level' contains suspiciously high values (>100)"
+    if (df["actor_level"] > 55).any():
+        return (
+            False,
+            "Column 'actor_level' contains values higher than the maximum in the game (>55)",
+        )
 
     return True, ""
 
@@ -498,10 +501,15 @@ def process_file(path: Path) -> Tuple[Optional[pd.DataFrame], int, Optional[str]
         Tuple of (processed_dataframe, original_row_count, error_message)
     """
     try:
-        df = pd.read_parquet(path, columns=feature_columns)
-        df["actor_account_id"] = df["actor_account_id"].astype(str)
-        orig_rows = len(df)
-        result = filter_and_process_session(df, path, df)
+        # Read unfiltered data for accurate session boundaries
+        df_unfiltered = pd.read_parquet(path, columns=feature_columns)
+        df_unfiltered["actor_account_id"] = df_unfiltered["actor_account_id"].astype(
+            str
+        )
+        orig_rows = len(df_unfiltered)
+
+        # Process with both filtered and unfiltered data
+        result = filter_and_process_session(df_unfiltered.copy(), path, df_unfiltered)
         return result, orig_rows, None
     except Exception as e:
         return None, 0, str(e)
