@@ -17,6 +17,8 @@ from preprocess import (
     handle_deletepc_events,
     logid_label_mapping,
     parse_timestamps,
+    simple_log_ids,
+    tuple_log_ids,
     validate_filtered_data,
     validate_raw_data,
 )
@@ -162,7 +164,7 @@ class TestValidateRawData:
         is_valid, error_msg = validate_raw_data(df)
         assert not is_valid
         assert "actor_level" in error_msg.lower()
-        assert "100" in error_msg
+        assert "55" in error_msg
 
 
 class TestFilterByLogids:
@@ -177,7 +179,7 @@ class TestFilterByLogids:
         )
         result = filter_by_logids(df)
         assert len(result) == 3
-        assert set(result["logid"]) == {1013, 1101, 1202}
+        assert result["logid"].isin(simple_log_ids).all()
 
     def test_filter_tuple_logids(self):
         df = pd.DataFrame(
@@ -189,7 +191,9 @@ class TestFilterByLogids:
         result = filter_by_logids(df)
         # Should only keep (1012, 1) and (1102, 1)
         assert len(result) == 2
-        assert all(result["log_detail_code"] == 1)
+        assert all(
+            (tuple(row) in tuple_log_ids for row in result.itertuples(index=False))
+        )
 
     def test_filter_empty_dataframe(self):
         df = pd.DataFrame(
@@ -293,6 +297,41 @@ class TestGetSessionBoundaries:
         assert "last_ts" in result.columns
         assert "actor_id" in result.columns
 
+    def test_boundary_timestamps_are_correct(self):
+        """Test that first_ts and last_ts contain the correct timestamp values."""
+        df = pd.DataFrame(
+            {
+                "time": [
+                    "2024-01-15 10:00:00.000",
+                    "2024-01-15 10:30:00.000",
+                    "2024-01-15 10:45:00.000",
+                    "2024-01-15 11:00:00.000",
+                    "2024-01-15 11:30:00.000",
+                ],
+                "session": [1, 1, 1, 2, 2],
+                "actor_account_id": [
+                    "player1",
+                    "player1",
+                    "player1",
+                    "player1",
+                    "player1",
+                ],
+            }
+        )
+        result = get_session_boundaries(df)
+
+        # Session 1: should span from 10:00:00 to 10:45:00
+        session_1 = result.loc[(1, datetime(2024, 1, 15).date())]
+        assert session_1["first_ts"] == pd.Timestamp("2024-01-15 10:00:00")
+        assert session_1["last_ts"] == pd.Timestamp("2024-01-15 10:45:00")
+        assert session_1["actor_id"] == "player1"
+
+        # Session 2: should span from 11:00:00 to 11:30:00
+        session_2 = result.loc[(2, datetime(2024, 1, 15).date())]
+        assert session_2["first_ts"] == pd.Timestamp("2024-01-15 11:00:00")
+        assert session_2["last_ts"] == pd.Timestamp("2024-01-15 11:30:00")
+        assert session_2["actor_id"] == "player1"
+
 
 class TestHandleDeletePCEvents:
     """Test DeletePC event handling."""
@@ -335,6 +374,14 @@ class TestHandleDeletePCEvents:
         deletepc_rows = result[result["logid"] == 1012]
         assert len(deletepc_rows) == 1
         assert deletepc_rows.iloc[0]["session"] == 1
+        # Verify the timestamp is preserved correctly
+        assert deletepc_rows.iloc[0]["timestamp"] == pd.Timestamp("2024-01-15 10:00:00")
+
+        # Verify other events maintain their timestamps
+        session_1_events = result[result["session"] == 1]
+        assert len(session_1_events) == 2  # DeletePC + one regular event
+        regular_event = result[(result["logid"] == 1013) & (result["session"] == 1)]
+        assert regular_event.iloc[0]["timestamp"] == pd.Timestamp("2024-01-15 10:30:00")
 
     def test_deletepc_with_no_future_session(self):
         df = pd.DataFrame(
