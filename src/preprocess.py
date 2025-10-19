@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from typing import Optional, Tuple
 
 import pandas as pd
 
@@ -58,70 +59,185 @@ logid_label_mapping = [
 ]
 
 
-def filter_and_process_session(df, df_unfiltered):
-    """Filter CSV and process into session-level features."""
-    # Filter rows
+def validate_raw_data(df: pd.DataFrame) -> Tuple[bool, str]:
+    """Validate raw data before processing.
+
+    Args:
+        df: Raw DataFrame to validate
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    # Check if DataFrame is empty
+    if df.empty:
+        return False, "DataFrame is empty"
+
+    # Check required columns exist
+    missing_cols = [col for col in feature_columns if col not in df.columns]
+    if missing_cols:
+        return False, f"Missing required columns: {missing_cols}"
+
+    # Check for nulls in critical columns
+    critical_cols = ["time", "session", "actor_account_id", "logid"]
+    null_cols = [col for col in critical_cols if df[col].isnull().any()]
+    if null_cols:
+        return False, f"Null values found in critical columns: {null_cols}"
+
+    # Check data types
+    if not pd.api.types.is_numeric_dtype(df["session"]):
+        return False, "Column 'session' must be numeric"
+    if not pd.api.types.is_numeric_dtype(df["logid"]):
+        return False, "Column 'logid' must be numeric"
+    if not pd.api.types.is_numeric_dtype(df["actor_level"]):
+        return False, "Column 'actor_level' must be numeric"
+
+    # Check timestamp format (sample first row)
+    pattern = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$"
+    if not re.match(pattern, str(df["time"].iloc[0])):
+        return False, f"Invalid timestamp format: {df['time'].iloc[0]}"
+
+    # Check value ranges
+    if (df["session"] < 0).any():
+        return False, "Column 'session' contains negative values"
+    if (df["actor_level"] < 0).any():
+        return False, "Column 'actor_level' contains negative values"
+    if (df["actor_level"] > 100).any():
+        return False, "Column 'actor_level' contains suspiciously high values (>100)"
+
+    return True, ""
+
+
+def filter_by_logids(df: pd.DataFrame) -> pd.DataFrame:
+    """Filter DataFrame by configured logids and log_detail_codes.
+
+    Args:
+        df: Input DataFrame with 'logid' and 'log_detail_code' columns
+
+    Returns:
+        Filtered DataFrame
+    """
     mask = df["logid"].isin(simple_log_ids)
     for logid, detail in tuple_log_ids:
         mask |= (df["logid"] == logid) & (df["log_detail_code"] == detail)
-    df = df.loc[mask].copy()
+    return df.loc[mask].copy()
 
-    if df.empty or not (df["session"] > 0).any():
-        return None
-    if not re.match(
-        r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$", str(df["time"].iloc[0])
-    ):
-        return None
 
-    # Parse timestamps
+def validate_filtered_data(df: pd.DataFrame) -> bool:
+    """Validate that filtered data meets processing requirements.
+
+    Args:
+        df: Filtered DataFrame
+
+    Returns:
+        True if data is valid, False otherwise
+    """
+    if df.empty:
+        return False
+    if not (df["session"] > 0).any():
+        return False
+
+    return True
+
+
+def parse_timestamps(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse timestamp strings and add session_date column.
+
+    Args:
+        df: DataFrame with 'time' column
+
+    Returns:
+        DataFrame with 'timestamp' and 'session_date' columns added
+    """
+    df = df.copy()
     df["timestamp"] = pd.to_datetime(df["time"], format="%Y-%m-%d %H:%M:%S.%f")
     df["session_date"] = df["timestamp"].dt.date
+    return df
 
-    # Get session boundaries from unfiltered data
-    if df_unfiltered is not None:
-        df_unfiltered["timestamp"] = pd.to_datetime(
-            df_unfiltered["time"], format="%Y-%m-%d %H:%M:%S.%f", errors="coerce"
-        )
-        df_unfiltered["session_date"] = df_unfiltered["timestamp"].dt.date
-        boundaries = (
-            df_unfiltered[df_unfiltered["session"] > 0]
-            .groupby(["session", "session_date"])
-            .agg(
-                first_ts=("timestamp", "min"),
-                last_ts=("timestamp", "max"),
-                actor_id=("actor_account_id", "first"),
-            )
-        )
-    else:
-        boundaries = None
 
-    # Handle DeletePC events (session=0)
+def get_session_boundaries(df_unfiltered: pd.DataFrame) -> pd.DataFrame:
+    """Extract session boundaries from unfiltered data.
+
+    Args:
+        df_unfiltered: Unfiltered DataFrame with all session data
+
+    Returns:
+        DataFrame with session boundaries indexed by (session, session_date)
+    """
+    # Parse timestamps
+    df_unfiltered = df_unfiltered.copy()
+    df_unfiltered["timestamp"] = pd.to_datetime(
+        df_unfiltered["time"], format="%Y-%m-%d %H:%M:%S.%f"
+    )
+    df_unfiltered["session_date"] = df_unfiltered["timestamp"].dt.date
+
+    # Extract boundaries
+    boundaries = (
+        df_unfiltered[df_unfiltered["session"] > 0]
+        .groupby(["session", "session_date"])
+        .agg(
+            first_ts=("timestamp", "min"),
+            last_ts=("timestamp", "max"),
+            actor_id=("actor_account_id", "first"),
+        )
+    )
+    return boundaries
+
+
+def handle_deletepc_events(df: pd.DataFrame) -> pd.DataFrame:
+    """Handle DeletePC events that have session=0 by matching to next session.
+
+    Args:
+        df: DataFrame with session data
+
+    Returns:
+        DataFrame with DeletePC events assigned to appropriate sessions
+    """
     deletepc_mask = (df["session"] == 0) & (df["logid"] == 1012)
-    df_valid = df[~deletepc_mask].copy()
-    if deletepc_mask.any() and not df_valid.empty:
-        deletepc = df[deletepc_mask].copy().sort_values("timestamp")
-        sessions = (
-            df_valid[["timestamp", "session"]]
-            .drop_duplicates("session")
-            .sort_values("timestamp")
-        )
-        matched = pd.merge_asof(
-            deletepc[["timestamp"]], sessions, on="timestamp", direction="forward"
-        )
-        deletepc["session"] = matched["session"]
-        df_valid = pd.concat(
-            [df_valid, deletepc[deletepc["session"].notna()]], ignore_index=True
-        )
 
-    # Aggregate session stats
-    stats = df_valid.groupby(["session", "session_date"]).agg(
+    if not deletepc_mask.any():
+        return df[df["session"] > 0].copy()
+
+    df_valid = df[~deletepc_mask].copy()
+
+    if df_valid.empty:
+        return df_valid
+
+    deletepc = df[deletepc_mask].copy().sort_values("timestamp")
+    sessions = (
+        df_valid[["timestamp", "session"]]
+        .drop_duplicates("session")
+        .sort_values("timestamp")
+    )
+    matched = pd.merge_asof(
+        deletepc[["timestamp"]], sessions, on="timestamp", direction="forward"
+    )
+    deletepc["session"] = matched["session"]
+
+    return pd.concat(
+        [df_valid, deletepc[deletepc["session"].notna()]], ignore_index=True
+    )
+
+
+def aggregate_session_stats(
+    df: pd.DataFrame, boundaries: Optional[pd.DataFrame] = None
+) -> pd.DataFrame:
+    """Aggregate data to session level with timestamps and actor info.
+
+    Args:
+        df: DataFrame with session data
+        boundaries: Optional session boundaries from unfiltered data
+
+    Returns:
+        DataFrame with session-level statistics
+    """
+    stats = df.groupby(["session", "session_date"]).agg(
         first_ts=("timestamp", "min"),
         last_ts=("timestamp", "max"),
         actor_id=("actor_account_id", "first"),
         level=("actor_level", "last"),
     )
 
-    # Merge with boundaries
+    # Merge with boundaries if available
     if boundaries is not None:
         stats = stats.join(boundaries, rsuffix="_b", how="left")
         stats["first_ts"] = stats["first_ts_b"].fillna(stats["first_ts"])
@@ -135,28 +251,53 @@ def filter_and_process_session(df, df_unfiltered):
         .astype(int)
     )
 
-    # Count events
+    return stats
+
+
+def add_event_counts_and_finalize(
+    stats: pd.DataFrame, df_valid: pd.DataFrame
+) -> pd.DataFrame:
+    """Count events per session, add to stats, and finalize columns.
+
+    Args:
+        stats: Session statistics DataFrame
+        df_valid: DataFrame with valid session data for counting events
+
+    Returns:
+        Finalized DataFrame with event counts and proper column names
+    """
+    # Count events per session
     logid_map = dict(logid_label_mapping)
     df_events = df_valid[df_valid["logid"].isin(logid_map.keys())].copy()
-    df_events["key"] = (
-        df_events["session"].astype(str) + "_" + df_events["session_date"].astype(str)
-    )
+
     if not df_events.empty:
-        counts = pd.crosstab(df_events["key"], df_events["logid"])
-        counts.columns = [logid_map.get(int(c), f"logid_{c}") for c in counts.columns]
+        df_events["key"] = (
+            df_events["session"].astype(str)
+            + "_"
+            + df_events["session_date"].astype(str)
+        )
+        event_counts = pd.crosstab(df_events["key"], df_events["logid"])
+        event_counts.columns = [
+            logid_map.get(int(c), f"logid_{c}") for c in event_counts.columns
+        ]
+
+        # Add event counts to stats
         stats = stats.reset_index()
         stats["key"] = (
             stats["session"].astype(str) + "_" + stats["session_date"].astype(str)
         )
-        stats = stats.set_index("key").join(counts, how="left").reset_index(drop=True)
+        stats = (
+            stats.set_index("key").join(event_counts, how="left").reset_index(drop=True)
+        )
 
-    # Fill missing events
+    # Fill missing event columns
     for _, label in logid_label_mapping:
         if label not in stats.columns:
             stats[label] = 0
         else:
             stats[label] = stats[label].fillna(0).astype(int)
 
+    # Rename and reorder columns
     stats.drop(columns=["session", "session_date"], inplace=True, errors="ignore")
     stats.rename(
         columns={
@@ -170,25 +311,70 @@ def filter_and_process_session(df, df_unfiltered):
     )
 
     event_cols = [l for _, l in logid_label_mapping]
-    return (
-        stats[
-            [
-                "first_timestamp",
-                "last_timestamp",
-                "actor_account_id",
-                "session_duration_minutes",
-                "actor_level",
-            ]
-            + event_cols
-        ]
-        .sort_values("last_timestamp")
-        .reset_index(drop=True)
-    )
+    column_order = [
+        "first_timestamp",
+        "last_timestamp",
+        "actor_account_id",
+        "session_duration_minutes",
+        "actor_level",
+    ] + event_cols
+
+    return stats[column_order].sort_values("last_timestamp").reset_index(drop=True)
 
 
-def aggregate_to_players(sessions) -> pd.DataFrame:
-    """Aggregate session data to player level."""
-    sessions["last_timestamp"] = pd.to_datetime(sessions["last_timestamp"])
+def filter_and_process_session(
+    df: pd.DataFrame, file_path: Path, df_unfiltered: Optional[pd.DataFrame] = None
+) -> Optional[pd.DataFrame]:
+    """Filter data and process into session-level features.
+
+    Args:
+        df: Input DataFrame with player logs (from Parquet file)
+        df_unfiltered: Optional unfiltered DataFrame for accurate session boundaries
+
+    Returns:
+        Processed session-level DataFrame or None if validation fails
+    """
+    # Step 0: Validate raw data
+    is_valid, error_msg = validate_raw_data(df)
+    if not is_valid:
+        print(f"Validation error for file: {file_path}\n Error message: {error_msg}")
+        return None
+
+    # Step 1: Filter by logids
+    df_filtered = filter_by_logids(df)
+
+    # Step 2: Validate filtered data
+    if not validate_filtered_data(df_filtered):
+        return None
+
+    # Step 3: Parse timestamps
+    df_filtered = parse_timestamps(df_filtered)
+
+    # Step 4: Get session boundaries
+    boundaries = None
+    if df_unfiltered is not None:
+        boundaries = get_session_boundaries(df_unfiltered)
+
+    # Step 5: Handle DeletePC events
+    df_valid = handle_deletepc_events(df_filtered)
+
+    # Step 6: Aggregate session stats
+    stats = aggregate_session_stats(df_valid, boundaries)
+
+    # Step 7: Add event counts and finalize
+    return add_event_counts_and_finalize(stats, df_valid)
+
+
+def aggregate_and_transform_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate sessions to player level and calculate derived features.
+
+    Args:
+        sessions: Session-level DataFrame
+
+    Returns:
+        Player-level DataFrame with aggregated and derived features
+    """
+    # Identify event columns
     event_cols = [
         c
         for c in sessions.columns
@@ -202,6 +388,7 @@ def aggregate_to_players(sessions) -> pd.DataFrame:
         ]
     ]
 
+    # Aggregate per player
     agg_dict = {
         "last_timestamp": ["min", "max", "count"],
         "session_duration_minutes": ["mean", "sum", "std", "min", "max"],
@@ -211,6 +398,8 @@ def aggregate_to_players(sessions) -> pd.DataFrame:
 
     players = sessions.groupby("actor_account_id", as_index=False).agg(agg_dict)
     players.columns = ["_".join(c) if c[1] else c[0] for c in players.columns.values]
+
+    # Rename columns
     players.rename(
         columns={
             "last_timestamp_min": "first_session_timestamp",
@@ -229,13 +418,11 @@ def aggregate_to_players(sessions) -> pd.DataFrame:
     rename_map = {}
     for c in players.columns:
         if c.endswith("_sum"):
-            new_name = c[:-4]  # Remove _sum
-            # Special case: rename pc_level_up to level_ups_across_all_characters
+            new_name = c[:-4]
             if new_name == "pc_level_up":
                 rename_map[c] = "level_ups_across_all_characters"
             else:
                 rename_map[c] = new_name
-
     players.rename(columns=rename_map, inplace=True)
 
     # Calculate derived features
@@ -245,11 +432,12 @@ def aggregate_to_players(sessions) -> pd.DataFrame:
         ).dt.total_seconds()
         / 86400
     ).round(2)
+
     players["average_sessions_per_day"] = (
         players["total_sessions"] / players["account_lifespan_days"].replace(0, 1)
     ).round(2)
 
-    # Round session duration statistics to 2 decimal places
+    # Round statistics
     players["avg_session_duration_minutes"] = players[
         "avg_session_duration_minutes"
     ].round(2)
@@ -257,10 +445,7 @@ def aggregate_to_players(sessions) -> pd.DataFrame:
         players["std_session_duration_minutes"].fillna(0).round(2)
     )
 
-    # Drop unwanted columns
-    players.drop(columns=["first_session_timestamp"], inplace=True, errors="ignore")
-
-    # Reorder
+    # Reorder columns
     base = [
         "actor_account_id",
         "last_session_timestamp",
@@ -273,7 +458,14 @@ def aggregate_to_players(sessions) -> pd.DataFrame:
         "min_session_duration_minutes",
         "max_session_duration_minutes",
     ]
-    events = [c for c in players.columns if c not in base]
+    events = [
+        c for c in players.columns if c not in base and c != "first_session_timestamp"
+    ]
+
+    # Drop first_session_timestamp
+    if "first_session_timestamp" in players.columns:
+        players = players.drop(columns=["first_session_timestamp"])
+
     return (
         players[base + events]
         .sort_values("last_session_timestamp", ascending=False)
@@ -281,13 +473,35 @@ def aggregate_to_players(sessions) -> pd.DataFrame:
     )
 
 
-def process_file(path):
-    """Process a single Parquet file."""
+def aggregate_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate session data to player level.
+
+    Args:
+        sessions: Session-level DataFrame
+
+    Returns:
+        Player-level DataFrame with aggregated features
+    """
+    sessions = sessions.copy()
+    sessions["last_timestamp"] = pd.to_datetime(sessions["last_timestamp"])
+
+    return aggregate_and_transform_to_players(sessions)
+
+
+def process_file(path: Path) -> Tuple[Optional[pd.DataFrame], int, Optional[str]]:
+    """Process a single Parquet file.
+
+    Args:
+        path: Path to Parquet file
+
+    Returns:
+        Tuple of (processed_dataframe, original_row_count, error_message)
+    """
     try:
         df = pd.read_parquet(path, columns=feature_columns)
         df["actor_account_id"] = df["actor_account_id"].astype(str)
         orig_rows = len(df)
-        result = filter_and_process_session(df, df)
+        result = filter_and_process_session(df, path, df)
         return result, orig_rows, None
     except Exception as e:
         return None, 0, str(e)
