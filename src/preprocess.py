@@ -1,6 +1,5 @@
 import re
 from pathlib import Path
-from typing import Optional, Tuple
 
 import pandas as pd
 
@@ -59,7 +58,7 @@ logid_label_mapping = [
 ]
 
 
-def validate_raw_data(df: pd.DataFrame) -> Tuple[bool, str]:
+def validate_raw_data(df: pd.DataFrame) -> tuple[bool, str]:
     """Validate raw data before processing.
 
     Args:
@@ -220,7 +219,7 @@ def handle_deletepc_events(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def aggregate_session_stats(
-    df: pd.DataFrame, boundaries: Optional[pd.DataFrame] = None
+    df: pd.DataFrame, boundaries: pd.DataFrame | None = None
 ) -> pd.DataFrame:
     """Aggregate data to session level with timestamps and actor info.
 
@@ -276,6 +275,7 @@ def add_event_counts_and_finalize(
             df_events["session"].astype(str)
             + "_"
             + df_events["session_date"].astype(str)
+            + "random_laong string for nothing just test here and there"
         )
         event_counts = pd.crosstab(df_events["key"], df_events["logid"])
         event_counts.columns = [
@@ -311,7 +311,7 @@ def add_event_counts_and_finalize(
         inplace=True,
     )
 
-    event_cols = [l for _, l in logid_label_mapping]
+    event_cols = [log_label for _, log_label in logid_label_mapping]
     column_order = [
         "first_timestamp",
         "last_timestamp",
@@ -324,8 +324,8 @@ def add_event_counts_and_finalize(
 
 
 def filter_and_process_session(
-    df: pd.DataFrame, file_path: Path, df_unfiltered: Optional[pd.DataFrame] = None
-) -> Optional[pd.DataFrame]:
+    df: pd.DataFrame, file_path: Path, df_unfiltered: pd.DataFrame | None = None
+) -> pd.DataFrame | None:
     """Filter data and process into session-level features.
 
     Args:
@@ -397,7 +397,7 @@ def aggregate_and_transform_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
     for col in event_cols:
         agg_dict[col] = ["sum"]
 
-    players = sessions.groupby("actor_account_id", as_index=False).agg(agg_dict)
+    players = sessions.groupby("actor_account_id", as_index=False).agg(agg_dict)  # type: ignore[call-overload]
     players.columns = ["_".join(c) if c[1] else c[0] for c in players.columns.values]
 
     # Rename columns
@@ -487,7 +487,7 @@ def aggregate_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
     return aggregate_and_transform_to_players(sessions)
 
 
-def process_file(path: Path) -> Tuple[Optional[pd.DataFrame], int, Optional[str]]:
+def process_file(path: Path) -> tuple[pd.DataFrame | None, int, str | None]:
     """Process a single Parquet file.
 
     Args:
@@ -516,7 +516,7 @@ def preprocess_all_players(
     output_dir: Path,
     output_filename: str,
     label_file_path: Path,
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Run the complete preprocessing pipeline.
 
     Args:
@@ -549,7 +549,7 @@ def preprocess_all_players(
     for i, f in enumerate(parquet_files, 1):
         if i == 1 or i == len(parquet_files) or i % 100 == 0:
             print(
-                f"Processing {i}/{len(parquet_files)} ({i/len(parquet_files)*100:.1f}%)...",
+                f"Processing {i}/{len(parquet_files)} ({i / len(parquet_files) * 100:.1f}%)...",
                 end="\r",
             )
         result, _, error = process_file(f)
@@ -591,7 +591,7 @@ def preprocess_all_players(
         print(
             f"✓ Joined labels: {players_after:,} players (dropped {players_before - players_after:,} unlabeled)"
         )
-    except Exception as e:
+    except Exception:
         print(f"Error joining label file at {label_file_path}!")
         return None
 
