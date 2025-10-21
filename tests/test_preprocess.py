@@ -193,7 +193,7 @@ class TestFilterByLogids:
         # Should only keep (1012, 1) and (1102, 1)
         assert len(result) == 2
         assert all(
-            (tuple(row) in tuple_log_ids for row in result.itertuples(index=False))
+            tuple(row) in tuple_log_ids for row in result.itertuples(index=False)
         )
 
     def test_filter_empty_dataframe(self):
