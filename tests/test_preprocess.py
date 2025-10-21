@@ -17,6 +17,7 @@ from preprocess import (
     handle_deletepc_events,
     logid_label_mapping,
     parse_timestamps,
+    preprocess_all_players,
     simple_log_ids,
     tuple_log_ids,
     validate_filtered_data,
@@ -673,6 +674,218 @@ class TestAggregateAndTransformToPlayers:
         assert result["avg_session_duration_minutes"].iloc[0] == round(
             (30.123456 + 45.789012 + 60.111111) / 3, 2
         )
+
+
+class TestPreprocessAllPlayersWithLabels:
+    """Test the complete preprocessing pipeline with label joining."""
+
+    def test_preprocess_with_labels_inner_join(self, tmp_path):
+        """Test that labels are correctly joined with player features using inner join."""
+        # Create temporary directories
+        raw_dir = tmp_path / "raw_parquet"
+        raw_dir.mkdir()
+        output_dir = tmp_path / "processed"
+        label_file = tmp_path / "labels.csv"
+
+        # Create a sample parquet file with valid data
+        sample_data = pd.DataFrame(
+            {
+                "time": ["2024-01-15 10:00:00.000"] * 5
+                + ["2024-01-15 11:00:00.000"] * 5,
+                "logid": [1013, 1101, 1202, 1013, 1101] * 2,
+                "session": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+                "log_detail_code": [0] * 10,
+                "actor_account_id": ["player1"] * 5 + ["player2"] * 5,
+                "actor_level": [10] * 10,
+            }
+        )
+        sample_data.to_parquet(raw_dir / "test_data.parquet")
+
+        # Create labels CSV with only player1 (to test inner join)
+        labels_data = pd.DataFrame(
+            {"actor_account_id": ["player1", "player3"], "churn_yn": [1, 0]}
+        )
+        labels_data.to_csv(label_file, index=False)
+
+        # Run preprocessing
+        result = preprocess_all_players(
+            raw_dir=raw_dir,
+            output_dir=output_dir,
+            output_filename="test_output.parquet",
+            label_file_path=label_file,
+        )
+
+        # Assertions
+        assert result is not None
+        assert "churn_yn" in result.columns
+        # Should only have player1 due to inner join (player2 not in labels, player3 not in features)
+        assert len(result) == 1
+        assert result["actor_account_id"].iloc[0] == "player1"
+        assert result["churn_yn"].iloc[0] == 1
+
+    def test_preprocess_without_labels_file(self, tmp_path):
+        """Test preprocessing when label file doesn't exist - should return None."""
+        # Create temporary directories
+        raw_dir = tmp_path / "raw_parquet"
+        raw_dir.mkdir()
+        output_dir = tmp_path / "processed"
+        label_file = tmp_path / "nonexistent_labels.csv"
+
+        # Create a sample parquet file
+        sample_data = pd.DataFrame(
+            {
+                "time": ["2024-01-15 10:00:00.000"] * 5,
+                "logid": [1013, 1101, 1202, 1013, 1101],
+                "session": [1, 1, 1, 1, 1],
+                "log_detail_code": [0] * 5,
+                "actor_account_id": ["player1"] * 5,
+                "actor_level": [10] * 5,
+            }
+        )
+        sample_data.to_parquet(raw_dir / "test_data.parquet")
+
+        # Run preprocessing without labels - should fail and return None
+        result = preprocess_all_players(
+            raw_dir=raw_dir,
+            output_dir=output_dir,
+            output_filename="test_output.parquet",
+            label_file_path=label_file,
+        )
+
+        # Should return None when label file doesn't exist
+        assert result is None
+
+    def test_label_datatype_consistency(self, tmp_path):
+        """Test that actor_account_id is converted to string for proper joining."""
+        # Create temporary directories
+        raw_dir = tmp_path / "raw_parquet"
+        raw_dir.mkdir()
+        output_dir = tmp_path / "processed"
+        label_file = tmp_path / "labels.csv"
+
+        # Create sample data with string account IDs
+        sample_data = pd.DataFrame(
+            {
+                "time": ["2024-01-15 10:00:00.000"] * 5,
+                "logid": [1013, 1101, 1202, 1013, 1101],
+                "session": [1, 1, 1, 1, 1],
+                "log_detail_code": [0] * 5,
+                "actor_account_id": ["ABC123"] * 5,
+                "actor_level": [10] * 5,
+            }
+        )
+        sample_data.to_parquet(raw_dir / "test_data.parquet")
+
+        # Create labels CSV
+        labels_data = pd.DataFrame({"actor_account_id": ["ABC123"], "churn_yn": [0]})
+        labels_data.to_csv(label_file, index=False)
+
+        # Run preprocessing
+        result = preprocess_all_players(
+            raw_dir=raw_dir,
+            output_dir=output_dir,
+            output_filename="test_output.parquet",
+            label_file_path=label_file,
+        )
+
+        # Should successfully join
+        assert result is not None
+        assert len(result) == 1
+        assert result["actor_account_id"].iloc[0] == "ABC123"
+        assert result["churn_yn"].iloc[0] == 0
+
+    def test_multiple_players_with_mixed_labels(self, tmp_path):
+        """Test preprocessing with multiple players, some with labels and some without."""
+        # Create temporary directories
+        raw_dir = tmp_path / "raw_parquet"
+        raw_dir.mkdir()
+        output_dir = tmp_path / "processed"
+        label_file = tmp_path / "labels.csv"
+
+        # Create sample data with three players
+        sample_data = pd.DataFrame(
+            {
+                "time": ["2024-01-15 10:00:00.000"] * 15,
+                "logid": [1013, 1101, 1202, 1013, 1101] * 3,
+                "session": [1] * 5 + [2] * 5 + [3] * 5,
+                "log_detail_code": [0] * 15,
+                "actor_account_id": ["player1"] * 5 + ["player2"] * 5 + ["player3"] * 5,
+                "actor_level": [10] * 15,
+            }
+        )
+        sample_data.to_parquet(raw_dir / "test_data.parquet")
+
+        # Create labels for only player1 and player2
+        labels_data = pd.DataFrame(
+            {"actor_account_id": ["player1", "player2"], "churn_yn": [1, 0]}
+        )
+        labels_data.to_csv(label_file, index=False)
+
+        # Run preprocessing
+        result = preprocess_all_players(
+            raw_dir=raw_dir,
+            output_dir=output_dir,
+            output_filename="test_output.parquet",
+            label_file_path=label_file,
+        )
+
+        # With inner join, only player1 and player2 should be in result
+        assert result is not None
+        assert len(result) == 2
+        assert set(result["actor_account_id"].values) == {"player1", "player2"}
+
+        # Check churn labels
+        player1_churn = result[result["actor_account_id"] == "player1"][
+            "churn_yn"
+        ].iloc[0]
+        player2_churn = result[result["actor_account_id"] == "player2"][
+            "churn_yn"
+        ].iloc[0]
+        assert player1_churn == 1
+        assert player2_churn == 0
+
+    def test_output_file_created_with_labels(self, tmp_path):
+        """Test that the output parquet file is created and contains labels."""
+        # Create temporary directories
+        raw_dir = tmp_path / "raw_parquet"
+        raw_dir.mkdir()
+        output_dir = tmp_path / "processed"
+        label_file = tmp_path / "labels.csv"
+        output_file = output_dir / "test_output.parquet"
+
+        # Create sample data
+        sample_data = pd.DataFrame(
+            {
+                "time": ["2024-01-15 10:00:00.000"] * 5,
+                "logid": [1013, 1101, 1202, 1013, 1101],
+                "session": [1, 1, 1, 1, 1],
+                "log_detail_code": [0] * 5,
+                "actor_account_id": ["player1"] * 5,
+                "actor_level": [10] * 5,
+            }
+        )
+        sample_data.to_parquet(raw_dir / "test_data.parquet")
+
+        # Create labels
+        labels_data = pd.DataFrame({"actor_account_id": ["player1"], "churn_yn": [1]})
+        labels_data.to_csv(label_file, index=False)
+
+        # Run preprocessing
+        result = preprocess_all_players(
+            raw_dir=raw_dir,
+            output_dir=output_dir,
+            output_filename="test_output.parquet",
+            label_file_path=label_file,
+        )
+
+        # Check that output file was created
+        assert output_file.exists()
+
+        # Read the output file and verify it contains labels
+        saved_data = pd.read_parquet(output_file)
+        assert "churn_yn" in saved_data.columns
+        assert len(saved_data) == 1
+        assert saved_data["churn_yn"].iloc[0] == 1
 
 
 if __name__ == "__main__":
