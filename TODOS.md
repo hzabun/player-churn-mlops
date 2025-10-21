@@ -6,7 +6,7 @@
 - [x] Add raw data validations to preprocessing
 - [x] Add tests for preprocessing script
 - [x] Implement prefect flow and tasks for preprocessing
-- [ ] Setup Feast
+- [x] Setup Feast
 - [ ] Add triggers in prefect for Feast
 - [ ] Setup CI/CD via GitHub Actions
   - [ ] Lints and tests
