@@ -680,7 +680,10 @@ class TestPreprocessAllPlayersWithLabels:
     """Test the complete preprocessing pipeline with label joining."""
 
     def test_preprocess_with_labels_inner_join(self, tmp_path):
-        """Test that labels are correctly joined with player features using inner join."""
+        """Test that labels are correctly joined with player features.
+
+        Uses inner join to keep only players with labels.
+        """
         # Create temporary directories
         raw_dir = tmp_path / "raw_parquet"
         raw_dir.mkdir()
@@ -871,7 +874,7 @@ class TestPreprocessAllPlayersWithLabels:
         labels_data.to_csv(label_file, index=False)
 
         # Run preprocessing
-        result = preprocess_all_players(
+        preprocess_all_players(
             raw_dir=raw_dir,
             output_dir=output_dir,
             output_filename="test_output.parquet",
