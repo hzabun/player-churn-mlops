@@ -512,9 +512,10 @@ def process_file(path: Path) -> Tuple[Optional[pd.DataFrame], int, Optional[str]
 
 
 def preprocess_all_players(
-    raw_dir: Path = Path("data/raw_parquet"),
-    output_dir: Path = Path("data/processed"),
-    output_filename: str = "player_features.parquet",
+    raw_dir: Path,
+    output_dir: Path,
+    output_filename: str,
+    label_file_path: Path,
 ) -> Optional[pd.DataFrame]:
     """Run the complete preprocessing pipeline.
 
@@ -522,6 +523,7 @@ def preprocess_all_players(
         raw_dir: Directory containing raw Parquet files
         output_dir: Directory to save processed output
         output_filename: Name of output file
+        label_file_path: Path to the label CSV file
 
     Returns:
         Processed player-level DataFrame or None if processing fails
@@ -569,6 +571,30 @@ def preprocess_all_players(
     combined = pd.concat(all_sessions, ignore_index=True)
     players = aggregate_to_players(combined)
 
+    # Read and join labels
+    try:
+        print(f"Reading labels from {label_file_path}...")
+        labels = pd.read_csv(label_file_path)
+        labels["actor_account_id"] = labels["actor_account_id"].astype(str)
+
+        # Join labels with player features (inner join to keep only labeled players)
+        players_before = len(players)
+        players = players.merge(labels, on="actor_account_id", how="inner")
+        players_after = len(players)
+
+        # Validate no null labels
+        null_labels = players["churn_yn"].isna().sum()
+        if null_labels > 0:
+            print(f"ERROR: Found {null_labels} players with null labels after merge!")
+            return None
+
+        print(
+            f"✓ Joined labels: {players_after:,} players (dropped {players_before - players_after:,} unlabeled)"
+        )
+    except Exception as e:
+        print(f"Error joining label file at {label_file_path}!")
+        return None
+
     output = output_dir / output_filename
     players.to_parquet(output, index=False, engine="pyarrow", compression="snappy")
 
@@ -577,3 +603,5 @@ def preprocess_all_players(
     print(f"  Players: {len(players):,} | Features: {players.shape[1]}")
     print(f"\nSample:\n{players.head(3)}")
     print("=" * 70)
+
+    return players

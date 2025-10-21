@@ -6,11 +6,18 @@ from src.preprocess import preprocess_all_players
 
 RAW_DATA_PATH = Path("data/raw_parquet")
 PROCESSED_DATA_PATH = Path("data/processed")
+PROCESSED_FILE_NAME = "player_features.parquet"
+LABEL_FILE_PATH = Path("data/label/train_labeld.csv")
 
 
 @task(name="preprocess_data_task")
 def preprocess_data_task():
-    preprocess_all_players(raw_dir=RAW_DATA_PATH, output_dir=PROCESSED_DATA_PATH)
+    preprocess_all_players(
+        raw_dir=RAW_DATA_PATH,
+        output_dir=PROCESSED_DATA_PATH,
+        output_filename=PROCESSED_FILE_NAME,
+        label_file_path=LABEL_FILE_PATH,
+    )
 
 
 @task(name="train_model_task")
