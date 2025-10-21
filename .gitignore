@@ -1,6 +1,25 @@
-/data
+# OS generated files
 .DS_Store
-/docs/log_schema
-__pycache__
-.vscode
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# IDEs and Editors
+.vscode/
+
+# Pytest
 .coverage
+*.pytest_cache/
+
+# Distribution / packaging
+.venv
+
+# Datasets / local databases
+/data
+/feature_store/data
+
+# Reference docs
+/docs/log_schema
+
+# Temporary backups
+*.backup
