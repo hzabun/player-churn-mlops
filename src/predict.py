@@ -15,4 +15,4 @@ features = fs.get_online_features(
 ).to_df()
 
 # Use features for churn prediction
-churn_probability = model.predict_proba(features)
+# churn_probability = model.predict_proba(features)
