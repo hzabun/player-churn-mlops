@@ -180,8 +180,4 @@ player_features = FeatureView(
     ],
     source=player_source,
     online=True,
-    tags={
-        "team": "data-science",
-        "use_case": "churn_prediction",
-    },
 )
