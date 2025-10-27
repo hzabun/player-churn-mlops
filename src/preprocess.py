@@ -275,7 +275,6 @@ def add_event_counts_and_finalize(
             df_events["session"].astype(str)
             + "_"
             + df_events["session_date"].astype(str)
-            + "random_laong string for nothing just test here and there"
         )
         event_counts = pd.crosstab(df_events["key"], df_events["logid"])
         event_counts.columns = [
