@@ -1,0 +1,108 @@
+name: CI/CD Pipeline
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  lint-and-format:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: Run Ruff linter
+        run: ruff check .
+
+      - name: Run Ruff formatter check
+        run: ruff format --check .
+
+  test:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pandas pyarrow
+
+      - name: Run pytest
+        run: |
+          pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  validate-feast:
+    name: Validate Feast Feature Store
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Feast
+        run: |
+          python -m pip install --upgrade pip
+          pip install feast
+
+      - name: Validate feature definitions
+        run: |
+          cd feature_store
+          feast plan
+
+      - name: Test Feast registry (dry-run)
+        run: |
+          cd feature_store
+          feast --help  # Ensure feast CLI is working
+          python -c "from feast import FeatureStore; fs = FeatureStore(repo_path='.'); print('Feature store loaded successfully')"
+
+  validate-prefect:
+    name: Validate Prefect Flows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install prefect pandas pyarrow
+
+      - name: Validate Prefect flows syntax
+        run: |
+          python -c "from prefect_flows import ml_pipeline_flow; print('Prefect flows validated successfully')"
