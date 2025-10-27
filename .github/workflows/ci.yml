@@ -1,10 +1,27 @@
 name: CI/CD Pipeline
 
 on:
+  # Run on pull requests to validate before merging
   pull_request:
     branches: [main, develop]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - "LICENSE"
+      - ".pre-commit-config.yaml"
+      - "TODOS.md"
+      - "README.md"
   push:
     branches: [main, develop]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - "LICENSE"
+      - ".pre-commit-config.yaml"
+      - "TODOS.md"
+      - "README.md"
 
 jobs:
   lint-and-format:
