@@ -7,8 +7,16 @@
 - [x] Add tests for preprocessing script
 - [x] Implement prefect flow and tasks for preprocessing
 - [x] Setup Feast
-- [ ] Add triggers in prefect for Feast
-- [ ] Setup CI/CD via GitHub Actions
-  - [ ] Lints and tests
-  - [ ] Unit tests for preprocessing script
-  - [ ] Validate feast features
+- [x] Setup CI/CD via GitHub Actions
+  - [x] Lints and tests
+  - [x] Unit tests for preprocessing script
+  - [x] Validate feast features
+- [ ] Train LightGBM model
+- [ ] Write unit tests for training script
+- [ ] Containerize current pipeline (preprocessing, training etc.)
+- [ ] Migrate to AWS via Terraform
+  - [ ] Setup S3 buckets
+  - [ ] Setup Feast offline/online stores
+  - [ ] Setup ECR images
+  - [ ] Setup EKS
+  - [ ] Adjust CI/CD
