@@ -1,10 +1,10 @@
 # Player Churn MLOps
+[![CI/CD Pipeline](https://github.com/hzabun/player-churn-mlops/actions/workflows/ci.yml/badge.svg)](https://github.com/hzabun/player-churn-mlops/actions/workflows/ci.yml)
 
 > [!WARNING] Project is still WIP, lots of changes are expected
 
 A production-ready MLOps project for predicting player churn in online games (Blade and Soul) using Prefect orchestration and Feast feature store.
 
-[![CI/CD Pipeline](https://github.com/hzabun/player-churn-mlops/actions/workflows/ci.yml/badge.svg)](https://github.com/hzabun/player-churn-mlops/actions/workflows/ci.yml)
 
 ## 🚀 Features
 
