@@ -1,16 +1,12 @@
 import pandas as pd
 from feast import FeatureStore
 
-# Initialize feature store
 fs = FeatureStore(repo_path="feature_store")
 
-# Load player features (includes labels and timestamps)
 features_df = pd.read_parquet("feature_store/data/player_features.parquet")
 
-# Filter to only labeled records
 labeled_df = features_df[features_df["churn_yn"].notna()].copy()
 
-# Create entity dataframe with event_timestamp
 entity_df = labeled_df[
     ["actor_account_id", "last_session_timestamp", "churn_yn"]
 ].copy()
@@ -20,14 +16,13 @@ entity_df = entity_df.rename(columns={"last_session_timestamp": "event_timestamp
 training_df = fs.get_historical_features(
     entity_df=entity_df,
     features=[
-        "player_features:churn_yn",  # The label is also a feature
+        "player_features:churn_yn",
         "player_features:total_sessions",
         "player_features:average_sessions_per_day",
-        # ... add all features you need
+        # ... more features as needed
     ],
 ).to_df()
 
-# Separate features and labels for training
 X = training_df.drop(columns=["actor_account_id", "event_timestamp", "churn_yn"])
 y = training_df["churn_yn"]
 
