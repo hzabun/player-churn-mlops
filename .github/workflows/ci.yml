@@ -1,27 +1,20 @@
 name: CI/CD Pipeline
 
 on:
-  # Run on pull requests to validate before merging
   pull_request:
     branches: [main, develop]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".gitignore"
-      - "LICENSE"
-      - ".pre-commit-config.yaml"
-      - "TODOS.md"
-      - "README.md"
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "feature_store/**"
+      - "prefect_flows.py"
   push:
     branches: [main, develop]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".gitignore"
-      - "LICENSE"
-      - ".pre-commit-config.yaml"
-      - "TODOS.md"
-      - "README.md"
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "feature_store/**"
+      - "prefect_flows.py"
 
 jobs:
   lint-and-format:
@@ -31,21 +24,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff
+        run: uv sync --frozen --group dev
 
       - name: Run Ruff linter
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Run Ruff formatter check
-        run: ruff format --check .
+        run: uv run ruff format --check .
 
   test:
     name: Run Unit Tests
@@ -54,19 +48,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pytest pytest-cov pandas pyarrow
+        run: uv sync --frozen --group test
 
       - name: Run pytest
-        run: |
-          pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
+        run: uv run pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -82,26 +76,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
       - name: Install Feast
-        run: |
-          python -m pip install --upgrade pip
-          pip install feast
+        run: uv sync --frozen --group feast
 
       - name: Validate feature definitions
         run: |
           cd feature_store
-          feast plan
+          uv run feast plan
 
       - name: Test Feast registry (dry-run)
         run: |
           cd feature_store
-          feast --help  # Ensure feast CLI is working
-          python -c "from feast import FeatureStore; fs = FeatureStore(repo_path='.'); print('Feature store loaded successfully')"
+          uv run feast --help
+          uv run python -c "from feast import FeatureStore; fs = FeatureStore(repo_path='.'); print('Feature store loaded successfully')"
 
   validate-prefect:
     name: Validate Prefect Flows
@@ -110,16 +105,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install prefect pandas pyarrow
+        run: uv sync --frozen --group prefect
 
       - name: Validate Prefect flows syntax
-        run: |
-          python -c "from prefect_flows import ml_pipeline_flow; print('Prefect flows validated successfully')"
+        run: uv run python -c "from prefect_flows import ml_pipeline_flow; print('Prefect flows validated successfully')"

@@ -3,11 +3,14 @@ name = "player-churn-mlops"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = []
 
 [dependency-groups]
 dev = ["pre-commit>=4.3.0", "ruff>=0.14.1"]
+test = ["pytest>=7.0", "pytest-cov>=4.0", "pandas>=2.0", "pyarrow>=12.0"]
+feast = ["feast>=0.37.0"]
+prefect = ["prefect>=3.0", "pandas>=2.0", "pyarrow>=12.0"]
 
 [tool.ruff]
 line-length = 88
