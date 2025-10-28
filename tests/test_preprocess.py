@@ -5,7 +5,6 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-# Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from preprocess import (
@@ -29,7 +28,6 @@ class TestValidateRawData:
     """Test raw data validation logic."""
 
     def test_valid_raw_data(self):
-        """Test that valid raw data passes validation."""
         df = pd.DataFrame(
             {
                 "time": ["2024-01-15 10:30:45.123"] * 3,
@@ -45,14 +43,12 @@ class TestValidateRawData:
         assert error_msg == ""
 
     def test_empty_dataframe(self):
-        """Test that empty DataFrame fails validation."""
         df = pd.DataFrame()
         is_valid, error_msg = validate_raw_data(df)
         assert not is_valid
         assert "empty" in error_msg.lower()
 
     def test_missing_columns(self):
-        """Test that missing required columns fails validation."""
         df = pd.DataFrame(
             {
                 "time": ["2024-01-15 10:30:45.123"],
@@ -67,7 +63,6 @@ class TestValidateRawData:
         assert "log_detail_code" in error_msg.lower()
 
     def test_null_in_critical_columns(self):
-        """Test that null values in critical columns fail validation."""
         df = pd.DataFrame(
             {
                 "time": ["2024-01-15 10:30:45.123", None],
@@ -84,7 +79,6 @@ class TestValidateRawData:
         assert "time" in error_msg.lower()
 
     def test_invalid_data_types(self):
-        """Test that invalid data types fail validation."""
         df = pd.DataFrame(
             {
                 "time": ["2024-01-15 10:30:45.123"] * 3,
@@ -101,10 +95,9 @@ class TestValidateRawData:
         assert "numeric" in error_msg.lower()
 
     def test_invalid_timestamp_format(self):
-        """Test that invalid timestamp format fails validation."""
         df = pd.DataFrame(
             {
-                "time": ["2024-01-15 10:30:45"],  # Missing milliseconds
+                "time": ["2024-01-15 10:30:45"],
                 "logid": [1013],
                 "session": [1],
                 "log_detail_code": [0],
@@ -117,12 +110,11 @@ class TestValidateRawData:
         assert "timestamp format" in error_msg.lower()
 
     def test_negative_session_values(self):
-        """Test that negative session values fail validation."""
         df = pd.DataFrame(
             {
                 "time": ["2024-01-15 10:30:45.123"] * 3,
                 "logid": [1013, 1101, 1202],
-                "session": [1, -1, 3],  # Negative session
+                "session": [1, -1, 3],
                 "log_detail_code": [0, 0, 0],
                 "actor_account_id": ["player1", "player1", "player1"],
                 "actor_level": [10, 11, 12],
@@ -134,7 +126,6 @@ class TestValidateRawData:
         assert "negative" in error_msg.lower()
 
     def test_negative_actor_level(self):
-        """Test that negative actor level fails validation."""
         df = pd.DataFrame(
             {
                 "time": ["2024-01-15 10:30:45.123"] * 3,
@@ -142,7 +133,7 @@ class TestValidateRawData:
                 "session": [1, 2, 3],
                 "log_detail_code": [0, 0, 0],
                 "actor_account_id": ["player1", "player1", "player1"],
-                "actor_level": [10, -5, 12],  # Negative level
+                "actor_level": [10, -5, 12],
             }
         )
         is_valid, error_msg = validate_raw_data(df)
@@ -151,7 +142,6 @@ class TestValidateRawData:
         assert "negative" in error_msg.lower()
 
     def test_suspiciously_high_actor_level(self):
-        """Test that suspiciously high actor level fails validation."""
         df = pd.DataFrame(
             {
                 "time": ["2024-01-15 10:30:45.123"] * 3,
@@ -159,7 +149,7 @@ class TestValidateRawData:
                 "session": [1, 2, 3],
                 "log_detail_code": [0, 0, 0],
                 "actor_account_id": ["player1", "player1", "player1"],
-                "actor_level": [10, 150, 12],  # Level 150 is suspicious
+                "actor_level": [10, 150, 12],
             }
         )
         is_valid, error_msg = validate_raw_data(df)
@@ -190,7 +180,6 @@ class TestFilterByLogids:
             }
         )
         result = filter_by_logids(df)
-        # Should only keep (1012, 1) and (1102, 1)
         assert len(result) == 2
         assert all(
             tuple(row) in tuple_log_ids for row in result.itertuples(index=False)
@@ -470,7 +459,7 @@ class TestAddEventCountsAndFinalize:
 
     def test_count_and_finalize(self):
         """Test that events are counted and columns are properly finalized."""
-        # Create session stats
+
         stats = pd.DataFrame(
             {
                 "session": [1, 2],
@@ -488,7 +477,6 @@ class TestAddEventCountsAndFinalize:
         )
         stats = stats.set_index(["session", "session_date"])
 
-        # Create valid data with events
         df_valid = pd.DataFrame(
             {
                 "session": [1, 1, 1, 2, 2],
@@ -499,19 +487,15 @@ class TestAddEventCountsAndFinalize:
 
         result = add_event_counts_and_finalize(stats, df_valid)
 
-        # Check structure
         assert "first_timestamp" in result.columns
         assert "last_timestamp" in result.columns
         assert "actor_account_id" in result.columns
         assert "session_duration_minutes" in result.columns
         assert "actor_level" in result.columns
-
-        # Check event columns
         assert "pc_level_up" in result.columns
         assert "invite_party" in result.columns
         assert "die" in result.columns
 
-        # Check event counts
         assert result["pc_level_up"].iloc[0] == 2  # Session 1 has 2 level ups
         assert result["invite_party"].iloc[0] == 1  # Session 1 has 1 invite
         assert result["die"].iloc[1] == 1  # Session 2 has 1 die
@@ -574,7 +558,6 @@ class TestAggregateAndTransformToPlayers:
         )
         result = aggregate_and_transform_to_players(sessions)
 
-        # Check basic structure
         assert len(result) == 1
         assert result["actor_account_id"].iloc[0] == "player1"
 
@@ -690,7 +673,6 @@ class TestPreprocessAllPlayersWithLabels:
         output_dir = tmp_path / "processed"
         label_file = tmp_path / "labels.csv"
 
-        # Create a sample parquet file with valid data
         sample_data = pd.DataFrame(
             {
                 "time": ["2024-01-15 10:00:00.000"] * 5
