@@ -63,9 +63,11 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: uv sync --frozen --group test
+        run: uv sync --frozen --group test --group preprocess
 
       - name: Run pytest
+        env:
+          PYTEST_ADDOPTS: "--color=yes"
         run: uv run pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
 
       - name: Upload coverage reports to Codecov
