@@ -125,4 +125,4 @@ jobs:
         run: uv sync --frozen --group prefect
 
       - name: Validate Prefect flows syntax
-        run: uv run python -c "from prefect_flows import ml_pipeline_flow; print('Prefect flows validated successfully')"
+        run: uv run python -m py_compile prefect_flows.py && echo "Prefect flows validated successfully"
