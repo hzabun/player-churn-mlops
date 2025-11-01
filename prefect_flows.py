@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 from pathlib import Path
 
@@ -6,6 +7,9 @@ from feast import FeatureStore
 from prefect import flow, task
 
 from src.preprocess import preprocess_all_players
+from src.train import train_model_pipeline
+
+logger = logging.getLogger(__name__)
 
 RAW_DATA_PATH = Path("data/raw_parquet")
 PROCESSED_DATA_PATH = Path("data/processed")
@@ -50,18 +54,43 @@ def materialize_features_task():
     start_date = min_date - timedelta(days=1)
     end_date = max_date + timedelta(days=1)
 
-    print(f"Materializing features from {start_date} to {end_date}")
-    print(f"  Data range: {min_date} to {max_date}")
-    print(f"  Total records: {len(df):,}")
+    logger.info(f"Materializing features from {start_date} to {end_date}")
+    logger.info(f"  Data range: {min_date} to {max_date}")
+    logger.info(f"  Total records: {len(df):,}")
 
     fs.materialize(start_date=start_date, end_date=end_date)
-    print("✓ Features materialized to online store")
+    logger.info("Features materialized to online store")
 
 
 @task(name="train_model_task")
-def train_model_task():
-    # TODO: Implement model training using Feast features
-    pass
+def train_model_task(
+    mlflow_tracking_uri: str,
+    feature_store_path: str = "feature_store",
+    test_size: float = 0.2,
+    val_size: float = 0.1,
+    random_state: int = 42,
+):
+    """Train LightGBM model for churn prediction.
+
+    Args:
+        feature_store_path: Path to Feast feature store
+        test_size: Proportion of data for test set
+        val_size: Proportion of training data for validation
+        random_state: Random seed for reproducibility
+
+    Returns:
+        Dictionary with evaluation metrics
+    """
+
+    metrics = train_model_pipeline(
+        mlflow_tracking_uri=mlflow_tracking_uri,
+        feature_store_path=feature_store_path,
+        test_size=test_size,
+        val_size=val_size,
+        random_state=random_state,
+    )
+
+    return {"metrics": metrics}
 
 
 @task(name="deploy_model_task")
@@ -71,13 +100,27 @@ def deploy_model_task():
 
 
 @flow(name="ml_pipeline_flow")
-def ml_pipeline_flow():
-    """Complete ML pipeline: preprocess → materialize → train → deploy."""
-    # preprocess_data_task()
-    materialize_features_task()
-    # train_model_task()
+def ml_pipeline_flow(run_preprocessing: bool = False, run_training: bool = True):
+    """Complete ML pipeline: preprocess → materialize → train → deploy.
+
+    Args:
+        run_preprocessing: Whether to run preprocessing step (default: False)
+        run_training: Whether to run training step (default: True)
+    """
+    if run_preprocessing:
+        preprocess_data_task()
+        materialize_features_task()
+
+    if run_training:
+        train_results = train_model_task(mlflow_tracking_uri="placeholder")
+        logger.info(f"Training completed: {train_results}")
+
     # deploy_model_task()
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
     ml_pipeline_flow()
