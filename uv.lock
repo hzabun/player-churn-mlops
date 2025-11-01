@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = "==3.13.*"
 
 [[package]]
@@ -1210,8 +1210,6 @@ preprocess = [
     { name = "pyarrow" },
 ]
 test = [
-    { name = "pandas" },
-    { name = "pyarrow" },
     { name = "pytest" },
     { name = "pytest-cov" },
 ]
@@ -1239,8 +1237,6 @@ preprocess = [
     { name = "pyarrow", specifier = ">=12.0" },
 ]
 test = [
-    { name = "pandas", specifier = ">=2.0" },
-    { name = "pyarrow", specifier = ">=12.0" },
     { name = "pytest", specifier = ">=7.0" },
     { name = "pytest-cov", specifier = ">=4.0" },
 ]
