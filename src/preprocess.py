@@ -2,6 +2,9 @@ import re
 from pathlib import Path
 
 import pandas as pd
+from dask.base import compute
+from dask.delayed import delayed
+from dask.distributed import Client, LocalCluster
 
 feature_columns = [
     "time",
@@ -486,14 +489,14 @@ def aggregate_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
     return aggregate_and_transform_to_players(sessions)
 
 
-def process_file(path: Path) -> tuple[pd.DataFrame | None, int, str | None]:
+def process_file(path: Path) -> tuple[pd.DataFrame | None, str | None]:
     """Process a single Parquet file.
 
     Args:
         path: Path to Parquet file
 
     Returns:
-        Tuple of (processed_dataframe, original_row_count, error_message)
+        Tuple of (processed_dataframe, error_message)
     """
     try:
         # Read unfiltered data for accurate session boundaries
@@ -501,13 +504,12 @@ def process_file(path: Path) -> tuple[pd.DataFrame | None, int, str | None]:
         df_unfiltered["actor_account_id"] = df_unfiltered["actor_account_id"].astype(
             str
         )
-        orig_rows = len(df_unfiltered)
 
         # Process with both filtered and unfiltered data
         result = filter_and_process_session(df_unfiltered.copy(), path, df_unfiltered)
-        return result, orig_rows, None
+        return result, None
     except Exception as e:
-        return None, 0, str(e)
+        return None, str(e)
 
 
 def preprocess_all_players(
@@ -515,14 +517,16 @@ def preprocess_all_players(
     output_dir: Path,
     output_filename: str,
     label_file_path: Path,
+    n_workers: int = 4,
 ) -> pd.DataFrame | None:
-    """Run the complete preprocessing pipeline.
+    """Run the complete preprocessing pipeline with Dask distributed processing.
 
     Args:
         raw_dir: Directory containing raw Parquet files
         output_dir: Directory to save processed output
         output_filename: Name of output file
         label_file_path: Path to the label CSV file
+        n_workers: Number of Dask workers for parallel processing
 
     Returns:
         Processed player-level DataFrame or None if processing fails
@@ -539,38 +543,81 @@ def preprocess_all_players(
         return None
 
     print("=" * 70)
-    print("Player Churn Preprocessing Pipeline")
+    print(f"Using Dask with {n_workers} workers for parallel processing")
     print("=" * 70)
     print(f"Found {len(parquet_files)} Parquet files\n")
 
-    all_sessions = []
-    success = skipped = failed = 0
-    for i, f in enumerate(parquet_files, 1):
-        if i == 1 or i == len(parquet_files) or i % 100 == 0:
-            print(
-                f"Processing {i}/{len(parquet_files)} ({i / len(parquet_files) * 100:.1f}%)...",
-                end="\r",
-            )
-        result, _, error = process_file(f)
-        if error:
-            failed += 1
-        elif result is None:
-            skipped += 1
-        else:
-            all_sessions.append(result)
-            success += 1
+    print("Setting up Dask cluster...")
+    cluster = LocalCluster(
+        n_workers=n_workers,
+        threads_per_worker=2,
+        memory_limit="2GB",
+        silence_logs=True,
+    )
+    client = Client(cluster)
+    print(f"✓ Dask dashboard available at: {client.dashboard_link}\n")
 
-    print(f"\n✓ Processed: {success} | ⊘ Skipped: {skipped} | ✗ Failed: {failed}\n")
+    try:
+        print("Processing files in parallel...")
+        delayed_results = [delayed(process_file)(f) for f in parquet_files]
 
-    if not all_sessions:
-        print("No data processed")
-        return None
+        results = compute(*delayed_results)
 
-    print("Aggregating to player level...")
-    combined = pd.concat(all_sessions, ignore_index=True)
-    players = aggregate_to_players(combined)
+        # Process results
+        all_sessions = []
+        success = skipped = failed = 0
+        for result, error in results:
+            if error:
+                failed += 1
+            elif result is None:
+                skipped += 1
+            else:
+                all_sessions.append(result)
+                success += 1
 
-    # Read and join labels
+        print(f"\n✓ Processed: {success} | ⊘ Skipped: {skipped} | ✗ Failed: {failed}\n")
+
+        if not all_sessions:
+            print("No data processed")
+            return None
+
+        print("Aggregating to player level...")
+        combined = pd.concat(all_sessions, ignore_index=True)
+        players = aggregate_to_players(combined)
+
+        # Read and join labels
+        players = _join_labels(players, label_file_path)
+        if players is None:
+            return None
+
+        # Save output
+        output = output_dir / output_filename
+        players.to_parquet(output, index=False, engine="pyarrow", compression="snappy")
+
+        print("\n" + "=" * 70)
+        print(f"✓ Saved: {output}")
+        print(f"  Players: {len(players):,} | Features: {players.shape[1]}")
+        print(f"\nSample:\n{players.head(3)}")
+        print("=" * 70)
+
+        return players
+
+    finally:
+        # Always close the client and cluster
+        client.close()
+        cluster.close()
+
+
+def _join_labels(players: pd.DataFrame, label_file_path: Path) -> pd.DataFrame | None:
+    """Join player features with labels.
+
+    Args:
+        players: Player-level features DataFrame
+        label_file_path: Path to the label CSV file
+
+    Returns:
+        DataFrame with joined labels or None if joining fails
+    """
     try:
         print(f"Reading labels from {label_file_path}...")
         labels = pd.read_csv(label_file_path)
@@ -590,17 +637,7 @@ def preprocess_all_players(
         print(
             f"✓ Joined labels: {players_after:,} players (dropped {players_before - players_after:,} unlabeled)"
         )
+        return players
     except Exception:
         print(f"Error joining label file at {label_file_path}!")
         return None
-
-    output = output_dir / output_filename
-    players.to_parquet(output, index=False, engine="pyarrow", compression="snappy")
-
-    print("\n" + "=" * 70)
-    print(f"✓ Saved: {output}")
-    print(f"  Players: {len(players):,} | Features: {players.shape[1]}")
-    print(f"\nSample:\n{players.head(3)}")
-    print("=" * 70)
-
-    return players

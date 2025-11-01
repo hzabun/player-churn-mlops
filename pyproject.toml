@@ -12,6 +12,12 @@ lint = ["ruff>=0.14.1"]
 test = ["pytest>=7.0", "pytest-cov>=4.0", "pandas>=2.0", "pyarrow>=12.0"]
 feast = ["feast>=0.37.0"]
 prefect = ["prefect>=3.0", "pandas>=2.0", "pyarrow>=12.0"]
+preprocess = [
+    "dask[complete]>=2024.1.0",
+    "distributed>=2024.1.0",
+    "pandas>=2.0",
+    "pyarrow>=12.0",
+]
 
 [tool.ruff]
 line-length = 88
