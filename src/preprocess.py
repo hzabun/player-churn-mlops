@@ -1,3 +1,4 @@
+import logging
 import re
 from pathlib import Path
 
@@ -5,6 +6,9 @@ import pandas as pd
 from dask.base import compute
 from dask.delayed import delayed
 from dask.distributed import Client, LocalCluster
+
+logger = logging.getLogger(__name__)
+
 
 feature_columns = [
     "time",
@@ -340,7 +344,8 @@ def filter_and_process_session(
     # Step 0: Validate raw data
     is_valid, error_msg = validate_raw_data(df)
     if not is_valid:
-        print(f"Validation error for file: {file_path}\n Error message: {error_msg}")
+        logger.error(f"Validation error for file: {file_path}")
+        logger.error(f"Error message: {error_msg}")
         return None
 
     # Step 1: Filter by logids
@@ -534,20 +539,20 @@ def preprocess_all_players(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not raw_dir.exists():
-        print(f"Error: {raw_dir} not found")
+        logger.error(f"Error: {raw_dir} not found")
         return None
 
     parquet_files = list(raw_dir.glob("*.parquet"))
     if not parquet_files:
-        print(f"No Parquet files in {raw_dir}")
+        logger.error(f"No Parquet files in {raw_dir}")
         return None
 
-    print("=" * 70)
-    print(f"Using Dask with {n_workers} workers for parallel processing")
-    print("=" * 70)
-    print(f"Found {len(parquet_files)} Parquet files\n")
+    logger.info("=" * 70)
+    logger.info(f"Using Dask with {n_workers} workers for parallel processing")
+    logger.info("=" * 70)
+    logger.info(f"Found {len(parquet_files)} Parquet files")
 
-    print("Setting up Dask cluster...")
+    logger.info("Setting up Dask cluster...")
     cluster = LocalCluster(
         n_workers=n_workers,
         threads_per_worker=2,
@@ -555,10 +560,10 @@ def preprocess_all_players(
         silence_logs=True,
     )
     client = Client(cluster)
-    print(f"✓ Dask dashboard available at: {client.dashboard_link}\n")
+    logger.info(f"Dask dashboard available at: {client.dashboard_link}")
 
     try:
-        print("Processing files in parallel...")
+        logger.info("Processing files in parallel...")
         delayed_results = [delayed(process_file)(f) for f in parquet_files]
 
         results = compute(*delayed_results)
@@ -575,13 +580,13 @@ def preprocess_all_players(
                 all_sessions.append(result)
                 success += 1
 
-        print(f"\n✓ Processed: {success} | ⊘ Skipped: {skipped} | ✗ Failed: {failed}\n")
+        logger.info(f"Processed: {success} | Skipped: {skipped} | Failed: {failed}")
 
         if not all_sessions:
-            print("No data processed")
+            logger.error("No data processed")
             return None
 
-        print("Aggregating to player level...")
+        logger.info("Aggregating to player level...")
         combined = pd.concat(all_sessions, ignore_index=True)
         players = aggregate_to_players(combined)
 
@@ -594,11 +599,11 @@ def preprocess_all_players(
         output = output_dir / output_filename
         players.to_parquet(output, index=False, engine="pyarrow", compression="snappy")
 
-        print("\n" + "=" * 70)
-        print(f"✓ Saved: {output}")
-        print(f"  Players: {len(players):,} | Features: {players.shape[1]}")
-        print(f"\nSample:\n{players.head(3)}")
-        print("=" * 70)
+        logger.info("=" * 70)
+        logger.info(f"Saved: {output}")
+        logger.info(f"  Players: {len(players):,} | Features: {players.shape[1]}")
+        logger.info(f"Sample:\n{players.head(3)}")
+        logger.info("=" * 70)
 
         return players
 
@@ -619,7 +624,7 @@ def _join_labels(players: pd.DataFrame, label_file_path: Path) -> pd.DataFrame |
         DataFrame with joined labels or None if joining fails
     """
     try:
-        print(f"Reading labels from {label_file_path}...")
+        logger.info(f"Reading labels from {label_file_path}...")
         labels = pd.read_csv(label_file_path)
         labels["actor_account_id"] = labels["actor_account_id"].astype(str)
 
@@ -631,13 +636,13 @@ def _join_labels(players: pd.DataFrame, label_file_path: Path) -> pd.DataFrame |
         # Validate no null labels
         null_labels = players["churn_yn"].isna().sum()
         if null_labels > 0:
-            print(f"ERROR: Found {null_labels} players with null labels after merge!")
+            logger.error(f"Found {null_labels} players with null labels after merge!")
             return None
 
-        print(
-            f"✓ Joined labels: {players_after:,} players (dropped {players_before - players_after:,} unlabeled)"
+        logger.info(
+            f"Joined labels: {players_after:,} players (dropped {players_before - players_after:,} unlabeled)"
         )
         return players
     except Exception:
-        print(f"Error joining label file at {label_file_path}!")
+        logger.exception(f"Error joining label file at {label_file_path}!")
         return None
