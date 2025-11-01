@@ -21,7 +21,7 @@ player = Entity(
 
 player_source = FileSource(
     name="player_features_source",
-    path="data/processed/player_features.parquet",
+    path="../data/processed/player_features.parquet",
     timestamp_field="last_session_timestamp",
     description="Parquet file containing aggregated player session features",
 )
