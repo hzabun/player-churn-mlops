@@ -63,7 +63,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: uv sync --frozen --group test --group preprocess
+        run: uv sync --frozen --group test --group preprocess --group train
 
       - name: Run pytest
         env:
