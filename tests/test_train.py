@@ -76,6 +76,17 @@ class TestPrepareFeatures:
         assert "total_sessions" in X.columns
         assert "avg_session_duration_minutes" in X.columns
 
+    def test_prepare_features_includes_correct_columns(self, sample_training_data):
+        X, y = prepare_features(sample_training_data)
+
+        exclude_list = ["actor_account_id", "event_timestamp", "churn_yn"]
+
+        include_list = sample_training_data.drop(
+            columns=exclude_list, errors="ignore"
+        ).columns.to_list()
+
+        assert set(include_list).issubset(set(X.columns))
+
     def test_prepare_features_y_is_churn_column(self, sample_training_data):
         """Test that y contains the churn_yn values."""
         X, y = prepare_features(sample_training_data)
