@@ -1,4 +1,5 @@
 # Player Churn MLOps
+
 [![CI/CD Pipeline](https://github.com/hzabun/player-churn-mlops/actions/workflows/ci.yml/badge.svg)](https://github.com/hzabun/player-churn-mlops/actions/workflows/ci.yml)
 
 > [!Note]
@@ -26,7 +27,7 @@ Raw Logs → Preprocess → Feature Store → Train → Predict → Deploy
 - [x] Feast feature store setup
 - [x] Comprehensive unit tests
 - [x] CI/CD with GitHub Actions
-- [ ] Model training with LightGBM
+- [x] Model training with LightGBM
 - [ ] Containerizing pipeline
 - [ ] Migration to AWS (S3, EKS, ECR)
 - [ ] Model deployment on AWS EKS

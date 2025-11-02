@@ -11,8 +11,8 @@
   - [x] Lints and tests
   - [x] Unit tests for preprocessing script
   - [x] Validate feast features
-- [ ] Train LightGBM model
-- [ ] Write unit tests for training script
+- [x] Train LightGBM model
+- [x] Write unit tests for training script
 - [ ] Containerize current pipeline (preprocessing, training etc.)
 - [ ] Migrate to AWS via Terraform
   - [ ] Setup S3 buckets
