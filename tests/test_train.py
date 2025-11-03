@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.train import evaluate_model, prepare_features, train_lightgbm_model
+from src.train import _evaluate_model, _prepare_features, _train_lightgbm_model
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ class TestPrepareFeatures:
 
     def test_prepare_features_returns_X_and_y(self, sample_training_data):
         """Test that prepare_features returns X and y."""
-        X, y = prepare_features(sample_training_data)
+        X, y = _prepare_features(sample_training_data)
 
         assert isinstance(X, pd.DataFrame)
         assert isinstance(y, pd.Series)
@@ -65,7 +65,7 @@ class TestPrepareFeatures:
 
     def test_prepare_features_excludes_correct_columns(self, sample_training_data):
         """Test that identifier and label columns are excluded from X."""
-        X, y = prepare_features(sample_training_data)
+        X, y = _prepare_features(sample_training_data)
 
         # These columns should not be in X
         assert "actor_account_id" not in X.columns
@@ -77,7 +77,7 @@ class TestPrepareFeatures:
         assert "avg_session_duration_minutes" in X.columns
 
     def test_prepare_features_includes_correct_columns(self, sample_training_data):
-        X, y = prepare_features(sample_training_data)
+        X, y = _prepare_features(sample_training_data)
 
         exclude_list = ["actor_account_id", "event_timestamp", "churn_yn"]
 
@@ -89,14 +89,14 @@ class TestPrepareFeatures:
 
     def test_prepare_features_y_is_churn_column(self, sample_training_data):
         """Test that y contains the churn_yn values."""
-        X, y = prepare_features(sample_training_data)
+        X, y = _prepare_features(sample_training_data)
 
         assert y.name == "churn_yn"
         assert set(y.unique()).issubset({0, 1})
 
     def test_prepare_features_preserves_row_count(self, sample_training_data):
         """Test that no rows are lost during feature preparation."""
-        X, y = prepare_features(sample_training_data)
+        X, y = _prepare_features(sample_training_data)
 
         assert len(X) == len(sample_training_data)
         assert len(y) == len(sample_training_data)
@@ -107,7 +107,7 @@ class TestTrainLightGBMModel:
 
     def test_train_lightgbm_model_returns_booster(self, sample_training_data):
         """Test that train_lightgbm_model returns a Booster object."""
-        X, y = prepare_features(sample_training_data)
+        X, y = _prepare_features(sample_training_data)
         X_train, X_val = X[:80], X[80:]
         y_train, y_val = y[:80], y[80:]
 
@@ -118,14 +118,14 @@ class TestTrainLightGBMModel:
             mlflow.set_experiment("test_experiment")
 
             with mlflow.start_run():
-                model = train_lightgbm_model(X_train, y_train, X_val, y_val)
+                model = _train_lightgbm_model(X_train, y_train, X_val, y_val)
 
             assert isinstance(model, lgb.Booster)
             assert model.best_iteration > 0
 
     def test_train_lightgbm_model_uses_custom_params(self, sample_training_data):
         """Test that custom parameters are passed to LightGBM."""
-        X, y = prepare_features(sample_training_data)
+        X, y = _prepare_features(sample_training_data)
         X_train, X_val = X[:80], X[80:]
         y_train, y_val = y[:80], y[80:]
 
@@ -143,7 +143,7 @@ class TestTrainLightGBMModel:
             mlflow.set_experiment("test_experiment")
 
             with mlflow.start_run():
-                model = train_lightgbm_model(
+                model = _train_lightgbm_model(
                     X_train, y_train, X_val, y_val, params=custom_params
                 )
 
@@ -153,7 +153,7 @@ class TestTrainLightGBMModel:
 
     def test_train_lightgbm_model_can_predict(self, sample_training_data):
         """Test that the trained model can make predictions."""
-        X, y = prepare_features(sample_training_data)
+        X, y = _prepare_features(sample_training_data)
         X_train, X_val = X[:80], X[80:]
         y_train, y_val = y[:80], y[80:]
 
@@ -164,7 +164,7 @@ class TestTrainLightGBMModel:
             mlflow.set_experiment("test_experiment")
 
             with mlflow.start_run():
-                model = train_lightgbm_model(X_train, y_train, X_val, y_val)
+                model = _train_lightgbm_model(X_train, y_train, X_val, y_val)
 
             predictions = model.predict(X_val)
             predictions_array = np.array(predictions)
@@ -177,7 +177,7 @@ class TestEvaluateModel:
 
     def test_evaluate_model_returns_metrics_dict(self, sample_training_data):
         """Test that evaluate_model returns a dictionary of metrics."""
-        X, y = prepare_features(sample_training_data)
+        X, y = _prepare_features(sample_training_data)
         X_train, X_val = X[:80], X[80:]
         y_train, y_val = y[:80], y[80:]
         X_test, y_test = X_val[:10], y_val[:10]
@@ -189,8 +189,8 @@ class TestEvaluateModel:
             mlflow.set_experiment("test_experiment")
 
             with mlflow.start_run():
-                model = train_lightgbm_model(X_train, y_train, X_val, y_val)
-                metrics = evaluate_model(model, X_test, y_test)
+                model = _train_lightgbm_model(X_train, y_train, X_val, y_val)
+                metrics = _evaluate_model(model, X_test, y_test)
 
             assert isinstance(metrics, dict)
             assert "accuracy" in metrics
@@ -200,7 +200,7 @@ class TestEvaluateModel:
 
     def test_evaluate_model_metrics_in_valid_range(self, sample_training_data):
         """Test that all metrics are between 0 and 1."""
-        X, y = prepare_features(sample_training_data)
+        X, y = _prepare_features(sample_training_data)
         X_train, X_val = X[:80], X[80:]
         y_train, y_val = y[:80], y[80:]
         X_test, y_test = X_val[:10], y_val[:10]
@@ -212,8 +212,8 @@ class TestEvaluateModel:
             mlflow.set_experiment("test_experiment")
 
             with mlflow.start_run():
-                model = train_lightgbm_model(X_train, y_train, X_val, y_val)
-                metrics = evaluate_model(model, X_test, y_test)
+                model = _train_lightgbm_model(X_train, y_train, X_val, y_val)
+                metrics = _evaluate_model(model, X_test, y_test)
 
             for metric_name, metric_value in metrics.items():
                 assert 0 <= metric_value <= 1, (

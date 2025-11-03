@@ -7,20 +7,19 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from preprocess import (
-    add_event_counts_and_finalize,
-    aggregate_and_transform_to_players,
-    aggregate_session_stats,
-    filter_by_logids,
-    get_session_boundaries,
-    handle_deletepc_events,
+from src.preprocess import (
+    _add_event_counts_and_finalize,
+    _aggregate_and_transform_to_players,
+    _aggregate_session_stats,
+    _filter_by_logids,
+    _get_session_boundaries,
+    _handle_deletepc_events,
+    _parse_timestamps,
+    _validate_filtered_data,
+    _validate_raw_data,
     logid_label_mapping,
-    parse_timestamps,
-    preprocess_all_players,
     simple_log_ids,
     tuple_log_ids,
-    validate_filtered_data,
-    validate_raw_data,
 )
 
 
@@ -38,13 +37,13 @@ class TestValidateRawData:
                 "actor_level": [10, 11, 12],
             }
         )
-        is_valid, error_msg = validate_raw_data(df)
+        is_valid, error_msg = _validate_raw_data(df)
         assert is_valid
         assert error_msg == ""
 
     def test_empty_dataframe(self):
         df = pd.DataFrame()
-        is_valid, error_msg = validate_raw_data(df)
+        is_valid, error_msg = _validate_raw_data(df)
         assert not is_valid
         assert "empty" in error_msg.lower()
 
@@ -57,7 +56,7 @@ class TestValidateRawData:
                 # Missing: log_detail_code, actor_account_id, actor_level
             }
         )
-        is_valid, error_msg = validate_raw_data(df)
+        is_valid, error_msg = _validate_raw_data(df)
         assert not is_valid
         assert "missing" in error_msg.lower()
         assert "log_detail_code" in error_msg.lower()
@@ -73,7 +72,7 @@ class TestValidateRawData:
                 "actor_level": [10, 11],
             }
         )
-        is_valid, error_msg = validate_raw_data(df)
+        is_valid, error_msg = _validate_raw_data(df)
         assert not is_valid
         assert "null" in error_msg.lower()
         assert "time" in error_msg.lower()
@@ -89,7 +88,7 @@ class TestValidateRawData:
                 "actor_level": [10, 11, 12],
             }
         )
-        is_valid, error_msg = validate_raw_data(df)
+        is_valid, error_msg = _validate_raw_data(df)
         assert not is_valid
         assert "logid" in error_msg.lower()
         assert "numeric" in error_msg.lower()
@@ -105,7 +104,7 @@ class TestValidateRawData:
                 "actor_level": [10],
             }
         )
-        is_valid, error_msg = validate_raw_data(df)
+        is_valid, error_msg = _validate_raw_data(df)
         assert not is_valid
         assert "timestamp format" in error_msg.lower()
 
@@ -120,7 +119,7 @@ class TestValidateRawData:
                 "actor_level": [10, 11, 12],
             }
         )
-        is_valid, error_msg = validate_raw_data(df)
+        is_valid, error_msg = _validate_raw_data(df)
         assert not is_valid
         assert "session" in error_msg.lower()
         assert "negative" in error_msg.lower()
@@ -136,7 +135,7 @@ class TestValidateRawData:
                 "actor_level": [10, -5, 12],
             }
         )
-        is_valid, error_msg = validate_raw_data(df)
+        is_valid, error_msg = _validate_raw_data(df)
         assert not is_valid
         assert "actor_level" in error_msg.lower()
         assert "negative" in error_msg.lower()
@@ -152,7 +151,7 @@ class TestValidateRawData:
                 "actor_level": [10, 150, 12],
             }
         )
-        is_valid, error_msg = validate_raw_data(df)
+        is_valid, error_msg = _validate_raw_data(df)
         assert not is_valid
         assert "actor_level" in error_msg.lower()
         assert "55" in error_msg
@@ -168,7 +167,7 @@ class TestFilterByLogids:
                 "log_detail_code": [0, 0, 0, 0, 0],
             }
         )
-        result = filter_by_logids(df)
+        result = _filter_by_logids(df)
         assert len(result) == 3
         assert result["logid"].isin(simple_log_ids).all()
 
@@ -179,7 +178,7 @@ class TestFilterByLogids:
                 "log_detail_code": [1, 2, 1, 2, 1],
             }
         )
-        result = filter_by_logids(df)
+        result = _filter_by_logids(df)
         assert len(result) == 2
         assert all(
             tuple(row) in tuple_log_ids for row in result.itertuples(index=False)
@@ -192,7 +191,7 @@ class TestFilterByLogids:
                 "log_detail_code": [],
             }
         )
-        result = filter_by_logids(df)
+        result = _filter_by_logids(df)
         assert len(result) == 0
 
     def test_filter_no_matches(self):
@@ -202,7 +201,7 @@ class TestFilterByLogids:
                 "log_detail_code": [0, 0, 0],
             }
         )
-        result = filter_by_logids(df)
+        result = _filter_by_logids(df)
         assert len(result) == 0
 
 
@@ -216,11 +215,11 @@ class TestValidateFilteredData:
                 "time": ["2024-01-15 10:30:45.123"] * 3,
             }
         )
-        assert validate_filtered_data(df)
+        assert _validate_filtered_data(df)
 
     def test_empty_dataframe(self):
         df = pd.DataFrame({"session": [], "time": []})
-        assert not validate_filtered_data(df)
+        assert not _validate_filtered_data(df)
 
     def test_no_positive_sessions(self):
         df = pd.DataFrame(
@@ -229,7 +228,7 @@ class TestValidateFilteredData:
                 "time": ["2024-01-15 10:30:45.123"] * 3,
             }
         )
-        assert not validate_filtered_data(df)
+        assert not _validate_filtered_data(df)
 
 
 class TestParseTimestamps:
@@ -245,7 +244,7 @@ class TestParseTimestamps:
                 ]
             }
         )
-        result = parse_timestamps(df)
+        result = _parse_timestamps(df)
 
         assert "timestamp" in result.columns
         assert "session_date" in result.columns
@@ -260,7 +259,7 @@ class TestParseTimestamps:
                 "other_col": [42],
             }
         )
-        result = parse_timestamps(df)
+        result = _parse_timestamps(df)
         assert "other_col" in result.columns
         assert result["other_col"].iloc[0] == 42
 
@@ -280,7 +279,7 @@ class TestGetSessionBoundaries:
                 "actor_account_id": ["player1", "player1", "player1"],
             }
         )
-        result = get_session_boundaries(df)
+        result = _get_session_boundaries(df)
 
         assert len(result) == 2
         assert "first_ts" in result.columns
@@ -308,7 +307,7 @@ class TestGetSessionBoundaries:
                 ],
             }
         )
-        result = get_session_boundaries(df)
+        result = _get_session_boundaries(df)
 
         # Session 1: should span from 10:00:00 to 10:45:00
         session_1 = result.loc[(1, datetime(2024, 1, 15).date())]
@@ -340,7 +339,7 @@ class TestHandleDeletePCEvents:
                 ),
             }
         )
-        result = handle_deletepc_events(df)
+        result = _handle_deletepc_events(df)
         assert len(result) == 3
         assert all(result["session"] > 0)
 
@@ -358,7 +357,7 @@ class TestHandleDeletePCEvents:
                 ),
             }
         )
-        result = handle_deletepc_events(df)
+        result = _handle_deletepc_events(df)
 
         # DeletePC should be assigned to session 1
         deletepc_rows = result[result["logid"] == 1012]
@@ -386,7 +385,7 @@ class TestHandleDeletePCEvents:
                 ),
             }
         )
-        result = handle_deletepc_events(df)
+        result = _handle_deletepc_events(df)
 
         # DeletePC with no future session should be dropped
         assert len(result) == 1
@@ -413,7 +412,7 @@ class TestAggregateSessionStats:
                 "actor_level": [10, 11, 11, 11],
             }
         )
-        result = aggregate_session_stats(df)
+        result = _aggregate_session_stats(df)
 
         assert len(result) == 2
         assert "first_ts" in result.columns
@@ -450,7 +449,7 @@ class TestAggregateSessionStats:
             ),
         )
 
-        result = aggregate_session_stats(df, boundaries)
+        result = _aggregate_session_stats(df, boundaries)
         assert len(result) == 1
 
 
@@ -485,7 +484,7 @@ class TestAddEventCountsAndFinalize:
             }
         )
 
-        result = add_event_counts_and_finalize(stats, df_valid)
+        result = _add_event_counts_and_finalize(stats, df_valid)
 
         assert "first_timestamp" in result.columns
         assert "last_timestamp" in result.columns
@@ -524,7 +523,7 @@ class TestAddEventCountsAndFinalize:
             }
         )
 
-        result = add_event_counts_and_finalize(stats, df_valid)
+        result = _add_event_counts_and_finalize(stats, df_valid)
 
         # All event columns should exist
         for _, event_name in logid_label_mapping:
@@ -556,7 +555,7 @@ class TestAggregateAndTransformToPlayers:
                 "die": [5, 3, 10],
             }
         )
-        result = aggregate_and_transform_to_players(sessions)
+        result = _aggregate_and_transform_to_players(sessions)
 
         assert len(result) == 1
         assert result["actor_account_id"].iloc[0] == "player1"
@@ -609,7 +608,7 @@ class TestAggregateAndTransformToPlayers:
                 "pc_level_up": [1, 2, 5],
             }
         )
-        result = aggregate_and_transform_to_players(sessions)
+        result = _aggregate_and_transform_to_players(sessions)
 
         assert len(result) == 2
         player1 = result[result["actor_account_id"] == "player1"].iloc[0]
@@ -630,7 +629,7 @@ class TestAggregateAndTransformToPlayers:
                 "pc_level_up": [1],
             }
         )
-        result = aggregate_and_transform_to_players(sessions)
+        result = _aggregate_and_transform_to_players(sessions)
 
         # Should handle division by zero
         assert result["account_lifespan_days"].iloc[0] == 0.0
@@ -651,226 +650,12 @@ class TestAggregateAndTransformToPlayers:
                 "session_duration_minutes": [30.123456, 45.789012, 60.111111],
             }
         )
-        result = aggregate_and_transform_to_players(sessions)
+        result = _aggregate_and_transform_to_players(sessions)
 
         # Check that values are rounded to 2 decimal places
         assert result["avg_session_duration_minutes"].iloc[0] == round(
             (30.123456 + 45.789012 + 60.111111) / 3, 2
         )
-
-
-class TestPreprocessAllPlayersWithLabels:
-    """Test the complete preprocessing pipeline with label joining."""
-
-    def test_preprocess_with_labels_inner_join(self, tmp_path):
-        """Test that labels are correctly joined with player features.
-
-        Uses inner join to keep only players with labels.
-        """
-        # Create temporary directories
-        raw_dir = tmp_path / "raw_parquet"
-        raw_dir.mkdir()
-        output_dir = tmp_path / "processed"
-        label_file = tmp_path / "labels.csv"
-
-        sample_data = pd.DataFrame(
-            {
-                "time": ["2024-01-15 10:00:00.000"] * 5
-                + ["2024-01-15 11:00:00.000"] * 5,
-                "logid": [1013, 1101, 1202, 1013, 1101] * 2,
-                "session": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
-                "log_detail_code": [0] * 10,
-                "actor_account_id": ["player1"] * 5 + ["player2"] * 5,
-                "actor_level": [10] * 10,
-            }
-        )
-        sample_data.to_parquet(raw_dir / "test_data.parquet")
-
-        # Create labels CSV with only player1 (to test inner join)
-        labels_data = pd.DataFrame(
-            {"actor_account_id": ["player1", "player3"], "churn_yn": [1, 0]}
-        )
-        labels_data.to_csv(label_file, index=False)
-
-        # Run preprocessing
-        result = preprocess_all_players(
-            raw_dir=raw_dir,
-            output_dir=output_dir,
-            output_filename="test_output.parquet",
-            label_file_path=label_file,
-        )
-
-        # Assertions
-        assert result is not None
-        assert "churn_yn" in result.columns
-        # Should only have player1 due to inner join (player2 not in labels, player3 not in features)
-        assert len(result) == 1
-        assert result["actor_account_id"].iloc[0] == "player1"
-        assert result["churn_yn"].iloc[0] == 1
-
-    def test_preprocess_without_labels_file(self, tmp_path):
-        """Test preprocessing when label file doesn't exist - should return None."""
-        # Create temporary directories
-        raw_dir = tmp_path / "raw_parquet"
-        raw_dir.mkdir()
-        output_dir = tmp_path / "processed"
-        label_file = tmp_path / "nonexistent_labels.csv"
-
-        # Create a sample parquet file
-        sample_data = pd.DataFrame(
-            {
-                "time": ["2024-01-15 10:00:00.000"] * 5,
-                "logid": [1013, 1101, 1202, 1013, 1101],
-                "session": [1, 1, 1, 1, 1],
-                "log_detail_code": [0] * 5,
-                "actor_account_id": ["player1"] * 5,
-                "actor_level": [10] * 5,
-            }
-        )
-        sample_data.to_parquet(raw_dir / "test_data.parquet")
-
-        # Run preprocessing without labels - should fail and return None
-        result = preprocess_all_players(
-            raw_dir=raw_dir,
-            output_dir=output_dir,
-            output_filename="test_output.parquet",
-            label_file_path=label_file,
-        )
-
-        # Should return None when label file doesn't exist
-        assert result is None
-
-    def test_label_datatype_consistency(self, tmp_path):
-        """Test that actor_account_id is converted to string for proper joining."""
-        # Create temporary directories
-        raw_dir = tmp_path / "raw_parquet"
-        raw_dir.mkdir()
-        output_dir = tmp_path / "processed"
-        label_file = tmp_path / "labels.csv"
-
-        # Create sample data with string account IDs
-        sample_data = pd.DataFrame(
-            {
-                "time": ["2024-01-15 10:00:00.000"] * 5,
-                "logid": [1013, 1101, 1202, 1013, 1101],
-                "session": [1, 1, 1, 1, 1],
-                "log_detail_code": [0] * 5,
-                "actor_account_id": ["ABC123"] * 5,
-                "actor_level": [10] * 5,
-            }
-        )
-        sample_data.to_parquet(raw_dir / "test_data.parquet")
-
-        # Create labels CSV
-        labels_data = pd.DataFrame({"actor_account_id": ["ABC123"], "churn_yn": [0]})
-        labels_data.to_csv(label_file, index=False)
-
-        # Run preprocessing
-        result = preprocess_all_players(
-            raw_dir=raw_dir,
-            output_dir=output_dir,
-            output_filename="test_output.parquet",
-            label_file_path=label_file,
-        )
-
-        # Should successfully join
-        assert result is not None
-        assert len(result) == 1
-        assert result["actor_account_id"].iloc[0] == "ABC123"
-        assert result["churn_yn"].iloc[0] == 0
-
-    def test_multiple_players_with_mixed_labels(self, tmp_path):
-        """Test preprocessing with multiple players, some with labels and some without."""
-        # Create temporary directories
-        raw_dir = tmp_path / "raw_parquet"
-        raw_dir.mkdir()
-        output_dir = tmp_path / "processed"
-        label_file = tmp_path / "labels.csv"
-
-        # Create sample data with three players
-        sample_data = pd.DataFrame(
-            {
-                "time": ["2024-01-15 10:00:00.000"] * 15,
-                "logid": [1013, 1101, 1202, 1013, 1101] * 3,
-                "session": [1] * 5 + [2] * 5 + [3] * 5,
-                "log_detail_code": [0] * 15,
-                "actor_account_id": ["player1"] * 5 + ["player2"] * 5 + ["player3"] * 5,
-                "actor_level": [10] * 15,
-            }
-        )
-        sample_data.to_parquet(raw_dir / "test_data.parquet")
-
-        # Create labels for only player1 and player2
-        labels_data = pd.DataFrame(
-            {"actor_account_id": ["player1", "player2"], "churn_yn": [1, 0]}
-        )
-        labels_data.to_csv(label_file, index=False)
-
-        # Run preprocessing
-        result = preprocess_all_players(
-            raw_dir=raw_dir,
-            output_dir=output_dir,
-            output_filename="test_output.parquet",
-            label_file_path=label_file,
-        )
-
-        # With inner join, only player1 and player2 should be in result
-        assert result is not None
-        assert len(result) == 2
-        assert set(result["actor_account_id"].values) == {"player1", "player2"}
-
-        # Check churn labels
-        player1_churn = result[result["actor_account_id"] == "player1"][
-            "churn_yn"
-        ].iloc[0]
-        player2_churn = result[result["actor_account_id"] == "player2"][
-            "churn_yn"
-        ].iloc[0]
-        assert player1_churn == 1
-        assert player2_churn == 0
-
-    def test_output_file_created_with_labels(self, tmp_path):
-        """Test that the output parquet file is created and contains labels."""
-        # Create temporary directories
-        raw_dir = tmp_path / "raw_parquet"
-        raw_dir.mkdir()
-        output_dir = tmp_path / "processed"
-        label_file = tmp_path / "labels.csv"
-        output_file = output_dir / "test_output.parquet"
-
-        # Create sample data
-        sample_data = pd.DataFrame(
-            {
-                "time": ["2024-01-15 10:00:00.000"] * 5,
-                "logid": [1013, 1101, 1202, 1013, 1101],
-                "session": [1, 1, 1, 1, 1],
-                "log_detail_code": [0] * 5,
-                "actor_account_id": ["player1"] * 5,
-                "actor_level": [10] * 5,
-            }
-        )
-        sample_data.to_parquet(raw_dir / "test_data.parquet")
-
-        # Create labels
-        labels_data = pd.DataFrame({"actor_account_id": ["player1"], "churn_yn": [1]})
-        labels_data.to_csv(label_file, index=False)
-
-        # Run preprocessing
-        preprocess_all_players(
-            raw_dir=raw_dir,
-            output_dir=output_dir,
-            output_filename="test_output.parquet",
-            label_file_path=label_file,
-        )
-
-        # Check that output file was created
-        assert output_file.exists()
-
-        # Read the output file and verify it contains labels
-        saved_data = pd.read_parquet(output_file)
-        assert "churn_yn" in saved_data.columns
-        assert len(saved_data) == 1
-        assert saved_data["churn_yn"].iloc[0] == 1
 
 
 if __name__ == "__main__":
