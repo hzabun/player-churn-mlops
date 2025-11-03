@@ -4,6 +4,7 @@ import lightgbm as lgb
 import mlflow
 import mlflow.lightgbm
 import pandas as pd
+import s3fs
 from feast import FeatureStore
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
@@ -11,26 +12,38 @@ from sklearn.model_selection import train_test_split
 logger = logging.getLogger(__name__)
 
 
-def get_training_data(feature_store_path: str = "feature_store") -> pd.DataFrame:
-    """Fetch historical features from Feast for model training.
+def _get_training_data(
+    label_file_path: str,
+    feature_store_path: str = "feature_store",
+) -> pd.DataFrame:
+    """Fetch historical features from Feast for model training with proper point-in-time joins.
 
     Args:
+        label_file_path: S3 path to label CSV file with columns:
+                        [actor_account_id, event_timestamp, churn_yn]
         feature_store_path: Path to Feast feature store repository
 
     Returns:
-        DataFrame with features ready for training
+        DataFrame with features + labels, properly aligned in time
     """
     logger.info("Loading Feast feature store...")
-    fs = FeatureStore(repo_path=feature_store_path)
+    feast_store = FeatureStore(repo_path=feature_store_path)
 
-    features_df = pd.read_parquet("data/processed/player_features.parquet")
+    # Read labels from S3
+    logger.info(f"Reading labels from {label_file_path}...")
+    fs = s3fs.S3FileSystem()
+    with fs.open(label_file_path, "rb") as f:
+        labels_df = pd.read_csv(f)
 
-    labeled_df = features_df[features_df["churn_yn"].notna()].copy()
-    logger.info(f"Found {len(labeled_df):,} labeled players")
+    # Ensure proper data types
+    labels_df["actor_account_id"] = labels_df["actor_account_id"].astype(str)
+    labels_df["event_timestamp"] = pd.to_datetime(labels_df["event_timestamp"])
+
+    logger.info(f"Found {len(labels_df):,} labeled training examples")
+    logger.info(f"Label distribution:\n{labels_df['churn_yn'].value_counts()}")
 
     # Prepare entity dataframe for Feast
-    entity_df = labeled_df[["actor_account_id", "last_session_timestamp"]].copy()
-    entity_df = entity_df.rename(columns={"last_session_timestamp": "event_timestamp"})
+    entity_df = labels_df[["actor_account_id", "event_timestamp"]].copy()
 
     feature_list = [
         "player_features:total_sessions",
@@ -62,14 +75,28 @@ def get_training_data(feature_store_path: str = "feature_store") -> pd.DataFrame
         "player_features:invite_guild",
         "player_features:join_guild",
         "player_features:dismiss_guild",
-        "player_features:churn_yn",  # Include label for easier processing
     ]
 
-    logger.info("Fetching historical features from Feast...")
-    training_df = fs.get_historical_features(
+    logger.info("Fetching historical features from Feast (point-in-time correct)...")
+    training_df = feast_store.get_historical_features(
         entity_df=entity_df,
         features=feature_list,
     ).to_df()
+
+    # Join labels back to the features
+    training_df = training_df.merge(
+        labels_df[["actor_account_id", "event_timestamp", "churn_yn"]],
+        on=["actor_account_id", "event_timestamp"],
+        how="left",
+    )
+
+    # Validate no null labels after merge
+    null_labels = training_df["churn_yn"].isna().sum()
+    if null_labels > 0:
+        logger.warning(
+            f"Found {null_labels} records with null labels after merge. Dropping them."
+        )
+        training_df = training_df[training_df["churn_yn"].notna()]
 
     logger.info(
         f"Retrieved {len(training_df):,} records with {training_df.shape[1]} columns"
@@ -77,7 +104,7 @@ def get_training_data(feature_store_path: str = "feature_store") -> pd.DataFrame
     return training_df
 
 
-def prepare_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+def _prepare_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     """Prepare features and target for model training.
 
     Args:
@@ -98,7 +125,7 @@ def prepare_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     return X, y
 
 
-def train_lightgbm_model(
+def _train_lightgbm_model(
     X_train: pd.DataFrame,
     y_train: pd.Series,
     X_val: pd.DataFrame,
@@ -164,7 +191,9 @@ def train_lightgbm_model(
     return model
 
 
-def evaluate_model(model: lgb.Booster, X_test: pd.DataFrame, y_test: pd.Series) -> dict:
+def _evaluate_model(
+    model: lgb.Booster, X_test: pd.DataFrame, y_test: pd.Series
+) -> dict:
     """Evaluate model performance on test set.
 
     Args:
@@ -198,6 +227,7 @@ def evaluate_model(model: lgb.Booster, X_test: pd.DataFrame, y_test: pd.Series) 
 
 def train_model_pipeline(
     mlflow_tracking_uri: str,
+    label_file_path: str,
     experiment_name: str = "player_churn_prediction",
     run_name: str | None = None,
     feature_store_path: str = "feature_store",
@@ -208,13 +238,14 @@ def train_model_pipeline(
     """Complete model training pipeline with MLflow tracking.
 
     Args:
+        mlflow_tracking_uri: MLflow tracking URI (local directory or remote server)
+        label_file_path: S3 path to label CSV with [actor_account_id, event_timestamp, churn_yn]
+        experiment_name: MLflow experiment name
+        run_name: Optional MLflow run name
         feature_store_path: Path to Feast feature store
         test_size: Proportion of data for test set
         val_size: Proportion of training data for validation
         random_state: Random seed for reproducibility
-        experiment_name: MLflow experiment name
-        run_name: Optional MLflow run name
-        mlflow_tracking_uri: MLflow tracking URI (local directory or remote server)
 
     Returns:
         Dictionary of evaluation metrics
@@ -230,20 +261,21 @@ def train_model_pipeline(
         logger.info(f"MLflow Experiment: {experiment_name}")
         logger.info("=" * 70)
 
+        mlflow.log_param("label_file_path", label_file_path)
         mlflow.log_param("feature_store_path", feature_store_path)
         mlflow.log_param("test_size", test_size)
         mlflow.log_param("val_size", val_size)
         mlflow.log_param("random_state", random_state)
 
-        # Step 1: Get training data from Feast
-        training_df = get_training_data(feature_store_path)
+        # Step 1: Get training data from Feast with point-in-time correct features
+        training_df = _get_training_data(label_file_path, feature_store_path)
         mlflow.log_param("total_samples", len(training_df))
         mlflow.log_param(
             "num_features", training_df.shape[1] - 3
         )  # Exclude ID, timestamp, label
 
         # Step 2: Prepare features and target
-        X, y = prepare_features(training_df)
+        X, y = _prepare_features(training_df)
 
         mlflow.log_metric("churn_rate", y.mean())
         mlflow.log_metric("num_churned", y.sum())
@@ -272,7 +304,7 @@ def train_model_pipeline(
         mlflow.log_metric("test_samples", len(X_test))
 
         # Step 4: Train model
-        model = train_lightgbm_model(X_train, y_train, X_val, y_val)
+        model = _train_lightgbm_model(X_train, y_train, X_val, y_val)
 
         # Log feature importance (top 10 features)
         feature_importance = model.feature_importance(importance_type="gain")
@@ -284,7 +316,7 @@ def train_model_pipeline(
             )
 
         # Step 5: Evaluate model
-        metrics = evaluate_model(model, X_test, y_test)
+        metrics = _evaluate_model(model, X_test, y_test)
 
         # Step 6: Log model
         mlflow.lightgbm.log_model(
@@ -308,5 +340,8 @@ def train_model_pipeline(
 
 
 if __name__ == "__main__":
-    metrics = train_model_pipeline(mlflow_tracking_uri="placeholder")
+    metrics = train_model_pipeline(
+        mlflow_tracking_uri="placeholder",
+        label_file_path="s3://placeholder-bucket/labels/train_labels.csv",
+    )
     logger.info(f"Final Metrics: {metrics}")

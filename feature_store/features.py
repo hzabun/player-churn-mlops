@@ -21,7 +21,7 @@ player = Entity(
 
 player_source = FileSource(
     name="player_features_source",
-    path="../data/processed/player_features.parquet",
+    path="s3://placeholder-bucket/processed/player_features.parquet",
     timestamp_field="last_session_timestamp",
     description="Parquet file containing aggregated player session features",
 )
@@ -34,14 +34,8 @@ player_source = FileSource(
 player_features = FeatureView(
     name="player_features",
     entities=[player],
-    ttl=timedelta(days=7),
+    ttl=timedelta(days=0),  # Set to 0 for testing purposes
     schema=[
-        # Label (target variable)
-        Field(
-            name="churn_yn",
-            dtype=Int64,
-            description="Churn label: 1 if player churned, 0 if retained",
-        ),
         # Temporal and engagement metrics
         Field(
             name="total_sessions",

@@ -1,6 +1,5 @@
 import logging
 from datetime import timedelta
-from pathlib import Path
 
 import pandas as pd
 from feast import FeatureStore
@@ -11,10 +10,9 @@ from src.train import train_model_pipeline
 
 logger = logging.getLogger(__name__)
 
-RAW_DATA_PATH = Path("data/raw_parquet")
-PROCESSED_DATA_PATH = Path("data/processed")
-PROCESSED_FILE_NAME = "player_features.parquet"
-LABEL_FILE_PATH = Path("data/label/train_labeld.csv")
+RAW_DATA_PATH = "s3://placeholder-bucket/raw_parquet/"
+PROCESSED_DATA_FILE_PATH = "s3://placeholder-bucket/processed/player_features.parquet"
+LABEL_FILE_PATH = "s3://placeholder-bucket/label/train_labeld.csv"
 
 
 @task(name="preprocess_data_task")
@@ -26,9 +24,7 @@ def preprocess_data_task(n_workers: int = 4):
     """
     preprocess_all_players(
         raw_dir=RAW_DATA_PATH,
-        output_dir=PROCESSED_DATA_PATH,
-        output_filename=PROCESSED_FILE_NAME,
-        label_file_path=LABEL_FILE_PATH,
+        output_file_path=PROCESSED_DATA_FILE_PATH,
         n_workers=n_workers,
     )
 
@@ -43,8 +39,8 @@ def materialize_features_task():
     fs = FeatureStore(repo_path="feature_store")
 
     # Read the processed data to determine date range
-    data_path = PROCESSED_DATA_PATH / PROCESSED_FILE_NAME
-    df = pd.read_parquet(data_path, columns=["last_session_timestamp"])
+    data_file_path = PROCESSED_DATA_FILE_PATH
+    df = pd.read_parquet(data_file_path, columns=["last_session_timestamp"])
 
     # Get min and max timestamps from the data
     min_date = df["last_session_timestamp"].min()
@@ -88,6 +84,7 @@ def train_model_task(
         test_size=test_size,
         val_size=val_size,
         random_state=random_state,
+        label_file_path=LABEL_FILE_PATH,
     )
 
     return {"metrics": metrics}

@@ -1,7 +1,9 @@
 project: player_churn_prediction
-registry: data/registry.db
-provider: local
+registry: s3://feast-test-s3-bucket/data/registry.pb
+provider: aws
+offline_store:
+  type: file
 online_store:
   type: sqlite
-  path: data/online_store.db
+  path: s3://feast-test-s3-bucket/data/online_store.db
 entity_key_serialization_version: 3

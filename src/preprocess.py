@@ -1,8 +1,8 @@
 import logging
 import re
-from pathlib import Path
 
 import pandas as pd
+import s3fs
 from dask.base import compute
 from dask.delayed import delayed
 from dask.distributed import Client, LocalCluster
@@ -65,7 +65,7 @@ logid_label_mapping = [
 ]
 
 
-def validate_raw_data(df: pd.DataFrame) -> tuple[bool, str]:
+def _validate_raw_data(df: pd.DataFrame) -> tuple[bool, str]:
     """Validate raw data before processing.
 
     Args:
@@ -116,7 +116,7 @@ def validate_raw_data(df: pd.DataFrame) -> tuple[bool, str]:
     return True, ""
 
 
-def filter_by_logids(df: pd.DataFrame) -> pd.DataFrame:
+def _filter_by_logids(df: pd.DataFrame) -> pd.DataFrame:
     """Filter DataFrame by configured logids and log_detail_codes.
 
     Args:
@@ -131,7 +131,7 @@ def filter_by_logids(df: pd.DataFrame) -> pd.DataFrame:
     return df.loc[mask].copy()
 
 
-def validate_filtered_data(df: pd.DataFrame) -> bool:
+def _validate_filtered_data(df: pd.DataFrame) -> bool:
     """Validate that filtered data meets processing requirements.
 
     Args:
@@ -148,7 +148,7 @@ def validate_filtered_data(df: pd.DataFrame) -> bool:
     return True
 
 
-def parse_timestamps(df: pd.DataFrame) -> pd.DataFrame:
+def _parse_timestamps(df: pd.DataFrame) -> pd.DataFrame:
     """Parse timestamp strings and add session_date column.
 
     Args:
@@ -162,7 +162,7 @@ def parse_timestamps(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def get_session_boundaries(df_unfiltered: pd.DataFrame) -> pd.DataFrame:
+def _get_session_boundaries(df_unfiltered: pd.DataFrame) -> pd.DataFrame:
     """Extract session boundaries from unfiltered data.
 
     Args:
@@ -190,7 +190,7 @@ def get_session_boundaries(df_unfiltered: pd.DataFrame) -> pd.DataFrame:
     return boundaries
 
 
-def handle_deletepc_events(df: pd.DataFrame) -> pd.DataFrame:
+def _handle_deletepc_events(df: pd.DataFrame) -> pd.DataFrame:
     """Handle DeletePC events that have session=0 by matching to next session.
 
     Args:
@@ -225,7 +225,7 @@ def handle_deletepc_events(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def aggregate_session_stats(
+def _aggregate_session_stats(
     df: pd.DataFrame, boundaries: pd.DataFrame | None = None
 ) -> pd.DataFrame:
     """Aggregate data to session level with timestamps and actor info.
@@ -261,7 +261,7 @@ def aggregate_session_stats(
     return stats
 
 
-def add_event_counts_and_finalize(
+def _add_event_counts_and_finalize(
     stats: pd.DataFrame, df_valid: pd.DataFrame
 ) -> pd.DataFrame:
     """Count events per session, add to stats, and finalize columns.
@@ -329,51 +329,52 @@ def add_event_counts_and_finalize(
     return stats[column_order].sort_values("last_timestamp").reset_index(drop=True)
 
 
-def filter_and_process_session(
-    df: pd.DataFrame, file_path: Path, df_unfiltered: pd.DataFrame | None = None
+def _filter_and_process_session(
+    df: pd.DataFrame, file_path: str, df_unfiltered: pd.DataFrame | None = None
 ) -> pd.DataFrame | None:
     """Filter data and process into session-level features.
 
     Args:
         df: Input DataFrame with player logs (from Parquet file)
+        file_path: Path to the file (for logging purposes)
         df_unfiltered: Optional unfiltered DataFrame for accurate session boundaries
 
     Returns:
         Processed session-level DataFrame or None if validation fails
     """
     # Step 0: Validate raw data
-    is_valid, error_msg = validate_raw_data(df)
+    is_valid, error_msg = _validate_raw_data(df)
     if not is_valid:
         logger.error(f"Validation error for file: {file_path}")
         logger.error(f"Error message: {error_msg}")
         return None
 
     # Step 1: Filter by logids
-    df_filtered = filter_by_logids(df)
+    df_filtered = _filter_by_logids(df)
 
     # Step 2: Validate filtered data
-    if not validate_filtered_data(df_filtered):
+    if not _validate_filtered_data(df_filtered):
         return None
 
     # Step 3: Parse timestamps
-    df_filtered = parse_timestamps(df_filtered)
+    df_filtered = _parse_timestamps(df_filtered)
 
     # Step 4: Get session boundaries
     boundaries = None
     if df_unfiltered is not None:
-        boundaries = get_session_boundaries(df_unfiltered)
+        boundaries = _get_session_boundaries(df_unfiltered)
 
     # Step 5: Handle DeletePC events
-    df_valid = handle_deletepc_events(df_filtered)
+    df_valid = _handle_deletepc_events(df_filtered)
 
     # Step 6: Aggregate session stats
-    stats = aggregate_session_stats(df_valid, boundaries)
+    stats = _aggregate_session_stats(df_valid, boundaries)
 
     # Step 7: Add event counts and finalize
-    return add_event_counts_and_finalize(stats, df_valid)
+    return _add_event_counts_and_finalize(stats, df_valid)
 
 
-def aggregate_and_transform_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
+def _aggregate_and_transform_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
     """Aggregate sessions to player level and calculate derived features.
 
     Args:
@@ -481,7 +482,7 @@ def aggregate_and_transform_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def aggregate_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
+def _aggregate_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
     """Aggregate session data to player level.
 
     Args:
@@ -491,58 +492,73 @@ def aggregate_to_players(sessions: pd.DataFrame) -> pd.DataFrame:
         Player-level DataFrame with aggregated features
     """
     sessions["last_timestamp"] = pd.to_datetime(sessions["last_timestamp"])
-    return aggregate_and_transform_to_players(sessions)
+    return _aggregate_and_transform_to_players(sessions)
 
 
-def process_file(path: Path) -> tuple[pd.DataFrame | None, str | None]:
-    """Process a single Parquet file.
+def _process_file(
+    path: str, fs: s3fs.S3FileSystem
+) -> tuple[pd.DataFrame | None, str | None]:
+    """Process a single Parquet file from S3.
 
     Args:
-        path: Path to Parquet file
+        path: S3 path to Parquet file
+        fs: S3FileSystem instance for reading files
 
     Returns:
         Tuple of (processed_dataframe, error_message)
     """
     try:
-        # Read unfiltered data for accurate session boundaries
-        df_unfiltered = pd.read_parquet(path, columns=feature_columns)
+        with fs.open(path, "rb") as f:
+            df_unfiltered = pd.read_parquet(f, columns=feature_columns)
         df_unfiltered["actor_account_id"] = df_unfiltered["actor_account_id"].astype(
             str
         )
 
-        # Process with both filtered and unfiltered data
-        result = filter_and_process_session(df_unfiltered.copy(), path, df_unfiltered)
+        result = _filter_and_process_session(df_unfiltered.copy(), path, df_unfiltered)
         return result, None
     except Exception as e:
         return None, str(e)
 
 
 def preprocess_all_players(
-    raw_dir: Path,
-    output_dir: Path,
-    output_filename: str,
-    label_file_path: Path,
+    raw_dir: str,
+    output_file_path: str,
     n_workers: int = 4,
 ) -> pd.DataFrame | None:
     """Run the complete preprocessing pipeline with Dask distributed processing.
 
     Args:
-        raw_dir: Directory containing raw Parquet files
-        output_dir: Directory to save processed output
-        output_filename: Name of output file
-        label_file_path: Path to the label CSV file
+        raw_dir: S3 path to directory containing raw Parquet files (e.g., 's3://bucket/path/')
+        output_file_path: S3 path to save processed output (e.g., 's3://bucket/output/features.parquet')
         n_workers: Number of Dask workers for parallel processing
 
     Returns:
-        Processed player-level DataFrame or None if processing fails
+        Processed player-level DataFrame with features or None if processing fails
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
+    fs = s3fs.S3FileSystem()
 
-    if not raw_dir.exists():
-        logger.error(f"Error: {raw_dir} not found")
+    # Ensure raw_dir ends with /
+    if not raw_dir.endswith("/"):
+        raw_dir = raw_dir + "/"
+
+    try:
+        if not fs.exists(raw_dir):
+            logger.error(f"Error: {raw_dir} not found")
+            return None
+    except Exception as e:
+        logger.error(f"Error accessing {raw_dir}: {e}")
         return None
 
-    parquet_files = list(raw_dir.glob("*.parquet"))
+    try:
+        parquet_files = fs.glob(f"{raw_dir}*.parquet")
+        # Add s3:// prefix if not present
+        parquet_files = [
+            f"s3://{f}" if not f.startswith("s3://") else f for f in parquet_files
+        ]
+    except Exception as e:
+        logger.error(f"Error listing files in {raw_dir}: {e}")
+        return None
+
     if not parquet_files:
         logger.error(f"No Parquet files in {raw_dir}")
         return None
@@ -564,7 +580,7 @@ def preprocess_all_players(
 
     try:
         logger.info("Processing files in parallel...")
-        delayed_results = [delayed(process_file)(f) for f in parquet_files]
+        delayed_results = [delayed(_process_file)(f, fs) for f in parquet_files]
 
         results = compute(*delayed_results)
 
@@ -588,19 +604,14 @@ def preprocess_all_players(
 
         logger.info("Aggregating to player level...")
         combined = pd.concat(all_sessions, ignore_index=True)
-        players = aggregate_to_players(combined)
+        players = _aggregate_to_players(combined)
 
-        # Read and join labels
-        players = _join_labels(players, label_file_path)
-        if players is None:
-            return None
-
-        # Save output
-        output = output_dir / output_filename
-        players.to_parquet(output, index=False, engine="pyarrow", compression="snappy")
+        # Write features to S3
+        with fs.open(output_file_path, "wb") as f:
+            players.to_parquet(f, index=False, engine="pyarrow", compression="snappy")
 
         logger.info("=" * 70)
-        logger.info(f"Saved: {output}")
+        logger.info(f"Saved: {output_file_path}")
         logger.info(f"  Players: {len(players):,} | Features: {players.shape[1]}")
         logger.info(f"Sample:\n{players.head(3)}")
         logger.info("=" * 70)
@@ -611,38 +622,3 @@ def preprocess_all_players(
         # Always close the client and cluster
         client.close()
         cluster.close()
-
-
-def _join_labels(players: pd.DataFrame, label_file_path: Path) -> pd.DataFrame | None:
-    """Join player features with labels.
-
-    Args:
-        players: Player-level features DataFrame
-        label_file_path: Path to the label CSV file
-
-    Returns:
-        DataFrame with joined labels or None if joining fails
-    """
-    try:
-        logger.info(f"Reading labels from {label_file_path}...")
-        labels = pd.read_csv(label_file_path)
-        labels["actor_account_id"] = labels["actor_account_id"].astype(str)
-
-        # Join labels with player features (inner join to keep only labeled players)
-        players_before = len(players)
-        players = players.merge(labels, on="actor_account_id", how="inner")
-        players_after = len(players)
-
-        # Validate no null labels
-        null_labels = players["churn_yn"].isna().sum()
-        if null_labels > 0:
-            logger.error(f"Found {null_labels} players with null labels after merge!")
-            return None
-
-        logger.info(
-            f"Joined labels: {players_after:,} players (dropped {players_before - players_after:,} unlabeled)"
-        )
-        return players
-    except Exception:
-        logger.exception(f"Error joining label file at {label_file_path}!")
-        return None
