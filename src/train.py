@@ -1,4 +1,5 @@
 import logging
+import os
 
 import lightgbm as lgb
 import mlflow
@@ -340,8 +341,27 @@ def train_model_pipeline(
 
 
 if __name__ == "__main__":
+    mlflow_tracking_uri = os.environ.get(
+        "MLFLOW_TRACKING_URI", "http://mlflow-server:5000"
+    )
+    label_file_path = os.environ.get(
+        "LABEL_FILE_PATH", "s3://s3://placeholder-bucket/label/train_labels.csv"
+    )
+    experiment_name = os.environ.get("EXPERIMENT_NAME", "player_churn_prediction")
+    run_name = os.environ.get("RUN_NAME")
+    feature_store_path = os.environ.get("FEATURE_STORE_PATH", "feature_store")
+    test_size = float(os.environ.get("TEST_SIZE", "0.2"))
+    val_size = float(os.environ.get("VAL_SIZE", "0.1"))
+    random_state = int(os.environ.get("RANDOM_STATE", "42"))
+
     metrics = train_model_pipeline(
-        mlflow_tracking_uri="placeholder",
-        label_file_path="s3://placeholder-bucket/labels/train_labels.csv",
+        mlflow_tracking_uri=mlflow_tracking_uri,
+        label_file_path=label_file_path,
+        experiment_name=experiment_name,
+        run_name=run_name,
+        feature_store_path=feature_store_path,
+        test_size=test_size,
+        val_size=val_size,
+        random_state=random_state,
     )
     logger.info(f"Final Metrics: {metrics}")
