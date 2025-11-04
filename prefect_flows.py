@@ -16,16 +16,17 @@ LABEL_FILE_PATH = "s3://placeholder-bucket/label/train_labeld.csv"
 
 
 @task(name="preprocess_data_task")
-def preprocess_data_task(n_workers: int = 4):
+def preprocess_data_task(worker_image: str, n_workers: int = 4):
     """Preprocess raw player data into features using Dask.
 
     Args:
         n_workers: Number of Dask workers for parallel processing (default: 4)
     """
     preprocess_all_players(
-        raw_dir=RAW_DATA_PATH,
+        raw_data_path=RAW_DATA_PATH,
         output_file_path=PROCESSED_DATA_FILE_PATH,
         n_workers=n_workers,
+        worker_image=worker_image,
     )
 
 
@@ -105,11 +106,11 @@ def ml_pipeline_flow(run_preprocessing: bool = False, run_training: bool = True)
         run_training: Whether to run training step (default: True)
     """
     if run_preprocessing:
-        preprocess_data_task()
+        preprocess_data_task(worker_image="placerhold_dask_image")
         materialize_features_task()
 
     if run_training:
-        train_results = train_model_task(mlflow_tracking_uri="placeholder")
+        train_results = train_model_task(mlflow_tracking_uri="placeholder_mlflow_uri")
         logger.info(f"Training completed: {train_results}")
 
     # deploy_model_task()

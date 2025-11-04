@@ -13,6 +13,7 @@ test = ["moto[s3]>=5.1.16", "pytest>=7.0", "pytest-cov>=4.0"]
 feast = ["feast[aws]>=0.56.0"]
 prefect = ["prefect>=3.0"]
 preprocess = [
+    "dask-kubernetes>=2025.7.0",
     "dask[complete]>=2025.10.0",
     "distributed>=2025.10.0",
     "pandas>=2.0",

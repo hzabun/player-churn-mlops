@@ -1,11 +1,13 @@
 import logging
+import os
 import re
 
 import pandas as pd
 import s3fs
 from dask.base import compute
 from dask.delayed import delayed
-from dask.distributed import Client, LocalCluster
+from dask.distributed import Client
+from dask_kubernetes.operator import KubeCluster
 
 logger = logging.getLogger(__name__)
 
@@ -521,9 +523,7 @@ def _process_file(
 
 
 def preprocess_all_players(
-    raw_dir: str,
-    output_file_path: str,
-    n_workers: int = 4,
+    raw_data_path: str, output_file_path: str, worker_image: str, n_workers: int
 ) -> pd.DataFrame | None:
     """Run the complete preprocessing pipeline with Dask distributed processing.
 
@@ -535,32 +535,33 @@ def preprocess_all_players(
     Returns:
         Processed player-level DataFrame with features or None if processing fails
     """
+
     fs = s3fs.S3FileSystem()
 
     # Ensure raw_dir ends with /
-    if not raw_dir.endswith("/"):
-        raw_dir = raw_dir + "/"
+    if not raw_data_path.endswith("/"):
+        raw_data_path = raw_data_path + "/"
 
     try:
-        if not fs.exists(raw_dir):
-            logger.error(f"Error: {raw_dir} not found")
+        if not fs.exists(raw_data_path):
+            logger.error(f"Error: {raw_data_path} not found")
             return None
     except Exception as e:
-        logger.error(f"Error accessing {raw_dir}: {e}")
+        logger.error(f"Error accessing {raw_data_path}: {e}")
         return None
 
     try:
-        parquet_files = fs.glob(f"{raw_dir}*.parquet")
+        parquet_files = fs.glob(f"{raw_data_path}*.parquet")
         # Add s3:// prefix if not present
         parquet_files = [
             f"s3://{f}" if not f.startswith("s3://") else f for f in parquet_files
         ]
     except Exception as e:
-        logger.error(f"Error listing files in {raw_dir}: {e}")
+        logger.error(f"Error listing files in {raw_data_path}: {e}")
         return None
 
     if not parquet_files:
-        logger.error(f"No Parquet files in {raw_dir}")
+        logger.error(f"No Parquet files in {raw_data_path}")
         return None
 
     logger.info("=" * 70)
@@ -569,11 +570,10 @@ def preprocess_all_players(
     logger.info(f"Found {len(parquet_files)} Parquet files")
 
     logger.info("Setting up Dask cluster...")
-    cluster = LocalCluster(
+    cluster = KubeCluster(
+        name="my-dask-cluster",
+        image=worker_image,
         n_workers=n_workers,
-        threads_per_worker=2,
-        memory_limit="2GB",
-        silence_logs=True,
     )
     client = Client(cluster)
     logger.info(f"Dask dashboard available at: {client.dashboard_link}")
@@ -622,3 +622,20 @@ def preprocess_all_players(
         # Always close the client and cluster
         client.close()
         cluster.close()
+
+
+if __name__ == "__main__":
+    raw_data_path = os.environ.get(
+        "RAW_DATA_PATH", "s3://placeholder-bucket/raw_parquet/"
+    )
+    output_file_path = os.environ.get(
+        "OUTPUT_FILE_PATH", "s3://placeholder-bucket/processed/player_features.parquet"
+    )
+    worker_image = os.environ.get("WORKER_IMAGE", "placerhold_dask_image")
+    n_workers = int(os.environ.get("N_WORKERS", 4))
+    preprocess_all_players(
+        raw_data_path=raw_data_path,
+        output_file_path=output_file_path,
+        worker_image=worker_image,
+        n_workers=n_workers,
+    )
