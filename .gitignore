@@ -30,4 +30,7 @@ coverage.xml
 # MLflow
 /mlruns
 
+# Terraform
+/terraform/*.tfvars
+
 /snippets
