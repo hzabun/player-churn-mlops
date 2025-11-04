@@ -1,0 +1,23 @@
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+
+RUN groupadd --system --gid 999 nonroot \
+    && useradd --system --gid 999 --uid 999 --create-home nonroot
+
+WORKDIR /app
+
+# Compile files to bytecode during build, rather than during runtime
+ENV UV_COMPILE_BYTECODE=1
+ENV PYTHONPATH=/app
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Install the project's dependencies using the lockfile and settings
+COPY uv.lock pyproject.toml ./
+RUN uv sync --locked --no-install-project --no-dev --group preprocess
+
+COPY src/preprocess.py /app/preprocess.py
+
+USER nonroot
+
+ENTRYPOINT []
+
+CMD ["python", "-m", "preprocess"]
