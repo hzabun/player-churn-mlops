@@ -13,12 +13,13 @@
   - [x] Validate feast features
 - [x] Train LightGBM model
 - [x] Write unit tests for training script
-- [ ] Containerize current pipeline (preprocessing, training etc.)
+- [x] Containerize current pipeline (preprocessing, training etc.)
   - [x] Convert scripts to use S3
-  - [ ] Convert scripts to use k8s Dask clusters
+  - [x] Convert scripts to use k8s Dask clusters
 - [ ] Migrate to AWS via Terraform
   - [ ] Setup S3 buckets
   - [ ] Setup Feast offline/online stores
   - [ ] Setup ECR images
   - [ ] Setup EKS
   - [ ] Adjust CI/CD
+- [ ] Setup prefect for AWS EKS
