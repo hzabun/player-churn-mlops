@@ -1,6 +1,6 @@
 - Each CSV in `raw` contains logs for a single player account
   - Each player account can have multiple characters
-- `train_labeld.csv` contains churn labels for each account ID
+- `train_labels.csv` contains churn labels for each account ID
 
 ## Player account logs
 
