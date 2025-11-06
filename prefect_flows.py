@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 RAW_DATA_PATH = "s3://placeholder-bucket/raw_parquet/"
 PROCESSED_DATA_FILE_PATH = "s3://placeholder-bucket/processed/player_features.parquet"
-LABEL_FILE_PATH = "s3://placeholder-bucket/label/train_labeld.csv"
+LABEL_FILE_PATH = "s3://placeholder-bucket/label/train_labels.csv"
 
 
 @task(name="preprocess_data_task")
