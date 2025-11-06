@@ -1,9 +1,9 @@
 project: player_churn_prediction
-registry: s3://feast-test-s3-bucket/data/registry.pb
+registry:
+  path: s3://player-churn-bns-mlops/feature-store/registry.pb
+  cache_ttl_seconds: 60
 provider: aws
-offline_store:
-  type: file
 online_store:
   type: sqlite
-  path: s3://feast-test-s3-bucket/data/online_store.db
+  path: data/online_store.db
 entity_key_serialization_version: 3

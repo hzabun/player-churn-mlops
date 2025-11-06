@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from feast import Entity, FeatureView, Field, FileSource, ValueType
+from feast.data_format import ParquetFormat
 from feast.types import Float64, Int64
 
 # ============================================================================
@@ -20,8 +21,9 @@ player = Entity(
 # ============================================================================
 
 player_source = FileSource(
+    file_format=ParquetFormat(),
     name="player_features_source",
-    path="s3://placeholder-bucket/processed/player_features.parquet",
+    path="s3://player-churn-bns-mlops/data/processed/player-features.parquet",
     timestamp_field="last_session_timestamp",
     description="Parquet file containing aggregated player session features",
 )
