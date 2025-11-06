@@ -12,7 +12,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "6.5.0"
 
-  name = "my-vpc"
+  name = "main-mlops-vpc"
   cidr = "10.0.0.0/24"
 
   azs             = ["us-east-1a"]
@@ -25,7 +25,7 @@ module "vpc" {
   tags = local.tags
 }
 
-module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "21.8.0"
-}
+# module "eks" {
+#   source  = "terraform-aws-modules/eks/aws"
+#   version = "21.8.0"
+# }
