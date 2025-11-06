@@ -18,7 +18,7 @@
   - [x] Convert scripts to use k8s Dask clusters
 - [ ] Migrate to AWS via Terraform
   - [x] Setup S3 buckets
-  - [ ] Setup Feast offline (S3) and online (S3) stores
+  - [x] Setup Feast offline (S3) and online (DynamoDB) stores
   - [ ] Setup ECR images
   - [ ] Setup EKS
   - [ ] Adjust CI/CD
