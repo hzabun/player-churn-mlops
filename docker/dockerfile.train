@@ -12,7 +12,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # Install the project's dependencies using the lockfile and settings
 COPY uv.lock pyproject.toml ./
-RUN uv sync --locked --no-install-project --no-dev --group train
+RUN uv sync --frozen --no-install-project --no-dev --group train
 
 COPY src/train.py /app/train.py
 
