@@ -19,7 +19,7 @@
 - [ ] Migrate to AWS via Terraform
   - [x] Setup S3 buckets
   - [x] Setup Feast offline (S3) and online (DynamoDB) stores
-  - [ ] Setup ECR images
+  - [x] Setup ECR images
   - [ ] Setup EKS
   - [ ] Adjust CI/CD
 - [ ] Setup prefect for AWS EKS
