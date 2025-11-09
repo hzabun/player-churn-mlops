@@ -35,4 +35,7 @@ coverage.xml
 *.tfstate*
 *.tfvars
 
+# Local env variables
+*env.sh
+
 /snippets
