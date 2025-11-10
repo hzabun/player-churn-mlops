@@ -20,7 +20,8 @@
   - [x] Setup S3 buckets
   - [x] Setup Feast offline (S3) and online (DynamoDB) stores
   - [x] Setup ECR images
-  - [ ] Setup EKS
+  - [x] Setup basic EKS control plane
+  - [ ] Test preprocessing pod on EKS cluster
   - [ ] Adjust CI/CD
 - [ ] Setup prefect for AWS EKS
 - [ ] Migrate Feast offline/online stores to Postgres and DynamoDB
