@@ -63,6 +63,10 @@ resource "aws_eks_cluster" "player_churn_prediction" {
 
   bootstrap_self_managed_addons = false
 
+  upgrade_policy {
+    support_type = "STANDARD"
+  }
+
   vpc_config {
     subnet_ids              = module.vpc.private_subnets
     endpoint_public_access  = true
@@ -76,10 +80,22 @@ resource "aws_eks_cluster" "player_churn_prediction" {
     enabled = false
   }
 
-  # Prevent recreation on certain attribute changes
-  lifecycle {
-    ignore_changes = [
-      access_config[0].bootstrap_cluster_creator_admin_permissions,
-    ]
-  }
+  depends_on = [module.vpc]
+}
+
+resource "aws_eks_addon" "coredns" {
+  cluster_name = aws_eks_cluster.player_churn_prediction.name
+  addon_name   = "coredns"
+  # addon_version               = "v1.11.3-eksbuild.2"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  configuration_values = jsonencode({
+    computeType = "Fargate"
+  })
+
+  depends_on = [
+    aws_eks_fargate_profile.kube_system
+  ]
+
+  tags = local.tags
 }
