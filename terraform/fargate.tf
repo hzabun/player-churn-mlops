@@ -28,12 +28,29 @@ resource "aws_eks_fargate_profile" "default" {
   tags = local.tags
 }
 
-# CloudWatch Log Group for Fargate Container Logs
-resource "aws_cloudwatch_log_group" "fargate_logs" {
-  name              = "/aws/eks/${aws_eks_cluster.player_churn_prediction.name}/fargate"
-  retention_in_days = 7
+# Create aws-observability namespace
+resource "kubernetes_namespace" "aws_observability" {
+  metadata {
+    name = "aws-observability"
+    labels = {
+      "aws-observability" = "enabled"
+    }
+  }
+}
 
-  tags = local.tags
+# Configure Fluent Bit to send logs to CloudWatch
+resource "kubernetes_manifest" "fargate_logging" {
+  manifest = yamldecode(templatefile(
+    "${path.module}/fargate-logging-configmap.yaml",
+    {
+      log_group_name     = aws_cloudwatch_log_group.fargate_logs.name
+      log_retention_days = aws_cloudwatch_log_group.fargate_logs.retention_in_days
+    }
+  ))
+
+  depends_on = [
+    kubernetes_namespace.aws_observability
+  ]
 }
 
 # IAM Role for Fargate Pod Execution used to pull container images and write logs to CloudWatch
@@ -99,29 +116,4 @@ resource "aws_iam_role_policy" "fargate_ecr_access" {
       }
     ]
   })
-}
-
-# Create aws-observability namespace
-resource "kubernetes_namespace" "aws_observability" {
-  metadata {
-    name = "aws-observability"
-    labels = {
-      "aws-observability" = "enabled"
-    }
-  }
-}
-
-# Configure Fluent Bit to send logs to CloudWatch
-resource "kubernetes_manifest" "fargate_logging" {
-  manifest = yamldecode(templatefile(
-    "${path.module}/fargate-logging-configmap.yaml",
-    {
-      log_group_name     = aws_cloudwatch_log_group.fargate_logs.name
-      log_retention_days = aws_cloudwatch_log_group.fargate_logs.retention_in_days
-    }
-  ))
-
-  depends_on = [
-    kubernetes_namespace.aws_observability
-  ]
 }
