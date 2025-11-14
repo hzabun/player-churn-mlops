@@ -1,0 +1,12 @@
+worker:
+  replicas: 2
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "1000m"
+
+jupyter:
+  enabled: true # Enable notebook for debugging

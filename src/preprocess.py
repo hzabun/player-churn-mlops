@@ -8,7 +8,7 @@ import s3fs
 from dask.base import compute
 from dask.delayed import delayed
 from dask.distributed import Client
-from dask_kubernetes.operator import KubeCluster, make_cluster_spec
+from dask_kubernetes.operator import KubeCluster
 
 # Configure logging to output to stdout
 logging.basicConfig(
@@ -540,14 +540,18 @@ def _process_file(
 
 
 def preprocess_all_players(
-    raw_data_path: str, output_file_path: str, worker_image: str, n_workers: int
+    raw_data_path: str,
+    output_file_path: str,
+    cluster_name: str = "preprocessing-cluster",
+    namespace: str = "processing",
 ) -> pd.DataFrame | None:
     """Run the complete preprocessing pipeline with Dask distributed processing.
 
     Args:
-        raw_dir: S3 path to directory containing raw Parquet files (e.g., 's3://bucket/path/')
+        raw_data_path: S3 path to directory containing raw Parquet files (e.g., 's3://bucket/path/')
         output_file_path: S3 path to save processed output (e.g., 's3://bucket/output/features.parquet')
-        n_workers: Number of Dask workers for parallel processing
+        cluster_name: Name of existing Dask cluster in Kubernetes (default: 'preprocessing-cluster')
+        namespace: Kubernetes namespace where cluster is deployed (default: 'processing')
 
     Returns:
         Processed player-level DataFrame with features or None if processing fails
@@ -590,34 +594,23 @@ def preprocess_all_players(
         return None
 
     logger.info("=" * 70)
-    logger.info(f"Using Dask with {n_workers} workers for parallel processing")
-    logger.info("=" * 70)
     logger.info(f"Found {len(parquet_files)} Parquet files")
+    logger.info("=" * 70)
 
-    logger.info("Setting up Dask cluster...")
+    logger.info(f"Connecting to Dask cluster: {cluster_name} in namespace {namespace}")
 
-    spec = make_cluster_spec(
-        name="my-dask-cluster",
-        image=worker_image,
-        n_workers=n_workers,
-        resources={
-            "requests": {"memory": "4Gi", "cpu": "2000m"},
-            "limits": {"memory": "8Gi", "cpu": "2000m"},
-        },
-    )
-    # Configure service account for S3 access
-    spec["spec"]["worker"]["spec"]["serviceAccountName"] = "preprocess-sa"
-
-    # Configure scheduler resources
-    scheduler_container = spec["spec"]["scheduler"]["spec"]["containers"][0]
-    scheduler_container["resources"] = {
-        "requests": {"memory": "512Mi", "cpu": "500m"},
-        "limits": {"memory": "1Gi", "cpu": "1000m"},
-    }
-
-    cluster = KubeCluster(custom_cluster_spec=spec)
-    client = Client(cluster)
-    logger.info(f"Dask dashboard available at: {client.dashboard_link}")
+    try:
+        # Connect to existing Dask cluster deployed via Helm
+        cluster = KubeCluster.from_name(name=cluster_name, namespace=namespace)
+        client = Client(cluster)
+        logger.info("Successfully connected to Dask cluster")
+        logger.info(f"Dask dashboard available at: {client.dashboard_link}")
+    except Exception as e:
+        logger.error(f"Failed to connect to Dask cluster '{cluster_name}': {e}")
+        logger.error(
+            "Make sure the cluster is deployed. Run: ./kubernetes/scripts/deploy-dask-cluster.sh"
+        )
+        return None
 
     try:
         logger.info("Processing files in parallel...")
@@ -664,9 +657,8 @@ def preprocess_all_players(
         return players
 
     finally:
-        # Always close the client and cluster
+        # Close client but don't close cluster (it's persistent and managed by Helm)
         client.close()
-        cluster.close()
 
 
 if __name__ == "__main__":
@@ -676,11 +668,12 @@ if __name__ == "__main__":
     output_file_path = os.environ.get(
         "OUTPUT_FILE_PATH", "s3://placeholder-bucket/processed/player-features.parquet"
     )
-    worker_image = os.environ.get("WORKER_IMAGE", "placerhold_dask_image")
-    n_workers = int(os.environ.get("N_WORKERS", 4))
+    cluster_name = os.environ.get("DASK_CLUSTER_NAME", "preprocessing-cluster")
+    namespace = os.environ.get("DASK_NAMESPACE", "processing")
+
     preprocess_all_players(
         raw_data_path=raw_data_path,
         output_file_path=output_file_path,
-        worker_image=worker_image,
-        n_workers=n_workers,
+        cluster_name=cluster_name,
+        namespace=namespace,
     )

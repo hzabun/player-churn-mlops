@@ -1,0 +1,22 @@
+# Staging environment - medium resources between dev and prod
+worker:
+  replicas: 4
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2000m"
+    limits:
+      memory: "8Gi"
+      cpu: "2000m"
+
+scheduler:
+  resources:
+    requests:
+      memory: "768Mi"
+      cpu: "750m"
+    limits:
+      memory: "1536Mi"
+      cpu: "1500m"
+
+jupyter:
+  enabled: false

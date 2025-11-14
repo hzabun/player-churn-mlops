@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: preprocessing-job-${TIMESTAMP}
+  namespace: processing
+spec:
+  ttlSecondsAfterFinished: 300 # Auto-delete job 5 mins after completion
+  backoffLimit: 2
+  template:
+    spec:
+      serviceAccountName: preprocess-sa
+      restartPolicy: Never
+      containers:
+        - name: preprocess
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/player-churn/preprocess:${IMAGE_TAG}
+          env:
+            - name: RAW_DATA_PATH
+              value: "${RAW_DATA_PATH}"
+            - name: OUTPUT_PATH
+              value: "${OUTPUT_PATH}"
+            - name: DASK_CLUSTER_NAME
+              value: "${DASK_CLUSTER_NAME}"
+            - name: AWS_DEFAULT_REGION
+              value: "${AWS_REGION}"
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
