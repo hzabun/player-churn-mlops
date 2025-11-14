@@ -1,14 +1,21 @@
 import logging
 import os
 import re
+import sys
 
 import pandas as pd
 import s3fs
 from dask.base import compute
 from dask.delayed import delayed
 from dask.distributed import Client
-from dask_kubernetes.operator import KubeCluster
+from dask_kubernetes.operator import KubeCluster, make_cluster_spec
 
+# Configure logging to output to stdout
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout,
+)
 logger = logging.getLogger(__name__)
 
 
@@ -510,16 +517,26 @@ def _process_file(
         Tuple of (processed_dataframe, error_message)
     """
     try:
+        logger.debug(f"Reading file: {path}")
         with fs.open(path, "rb") as f:
             df_unfiltered = pd.read_parquet(f, columns=feature_columns)
+        logger.debug(f"Successfully read {len(df_unfiltered)} rows from {path}")
+
         df_unfiltered["actor_account_id"] = df_unfiltered["actor_account_id"].astype(
             str
         )
 
         result = _filter_and_process_session(df_unfiltered.copy(), path, df_unfiltered)
+        if result is None:
+            logger.debug(f"File {path} returned None after processing")
+        else:
+            logger.debug(f"File {path} produced {len(result)} session records")
         return result, None
     except Exception as e:
-        return None, str(e)
+        logger.error(f"Exception processing {path}: {e}")
+        import traceback
+
+        return None, f"{str(e)}\n{traceback.format_exc()}"
 
 
 def preprocess_all_players(
@@ -536,28 +553,36 @@ def preprocess_all_players(
         Processed player-level DataFrame with features or None if processing fails
     """
 
+    logger.info("Initializing S3 filesystem...")
     fs = s3fs.S3FileSystem()
+    logger.info("S3 filesystem initialized successfully")
 
     # Ensure raw_dir ends with /
     if not raw_data_path.endswith("/"):
         raw_data_path = raw_data_path + "/"
 
+    logger.info(f"Checking if path exists: {raw_data_path}")
     try:
         if not fs.exists(raw_data_path):
             logger.error(f"Error: {raw_data_path} not found")
             return None
+        logger.info(f"Path {raw_data_path} exists")
     except Exception as e:
         logger.error(f"Error accessing {raw_data_path}: {e}")
+        logger.exception("Full traceback:")
         return None
 
+    logger.info(f"Listing parquet files in {raw_data_path}")
     try:
         parquet_files = fs.glob(f"{raw_data_path}*.parquet")
         # Add s3:// prefix if not present
         parquet_files = [
             f"s3://{f}" if not f.startswith("s3://") else f for f in parquet_files
         ]
+        logger.info(f"Found {len(parquet_files)} files")
     except Exception as e:
         logger.error(f"Error listing files in {raw_data_path}: {e}")
+        logger.exception("Full traceback:")
         return None
 
     if not parquet_files:
@@ -570,11 +595,27 @@ def preprocess_all_players(
     logger.info(f"Found {len(parquet_files)} Parquet files")
 
     logger.info("Setting up Dask cluster...")
-    cluster = KubeCluster(
+
+    spec = make_cluster_spec(
         name="my-dask-cluster",
         image=worker_image,
         n_workers=n_workers,
+        resources={
+            "requests": {"memory": "4Gi", "cpu": "2000m"},
+            "limits": {"memory": "8Gi", "cpu": "2000m"},
+        },
     )
+    # Configure service account for S3 access
+    spec["spec"]["worker"]["spec"]["serviceAccountName"] = "preprocess-sa"
+
+    # Configure scheduler resources
+    scheduler_container = spec["spec"]["scheduler"]["spec"]["containers"][0]
+    scheduler_container["resources"] = {
+        "requests": {"memory": "512Mi", "cpu": "500m"},
+        "limits": {"memory": "1Gi", "cpu": "1000m"},
+    }
+
+    cluster = KubeCluster(custom_cluster_spec=spec)
     client = Client(cluster)
     logger.info(f"Dask dashboard available at: {client.dashboard_link}")
 
@@ -587,11 +628,15 @@ def preprocess_all_players(
         # Process results
         all_sessions = []
         success = skipped = failed = 0
-        for result, error in results:
+        for i, (result, error) in enumerate(results):
             if error:
                 failed += 1
+                logger.error(f"Failed to process {parquet_files[i]}: {error}")
             elif result is None:
                 skipped += 1
+                logger.warning(
+                    f"Skipped {parquet_files[i]} (validation failed or no valid data)"
+                )
             else:
                 all_sessions.append(result)
                 success += 1
