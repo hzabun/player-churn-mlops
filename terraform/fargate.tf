@@ -28,31 +28,6 @@ resource "aws_eks_fargate_profile" "default" {
   tags = local.tags
 }
 
-# Create aws-observability namespace
-resource "kubernetes_namespace" "aws_observability" {
-  metadata {
-    name = "aws-observability"
-    labels = {
-      "aws-observability" = "enabled"
-    }
-  }
-}
-
-# Configure Fluent Bit to send logs to CloudWatch
-resource "kubernetes_manifest" "fargate_logging" {
-  manifest = yamldecode(templatefile(
-    "${path.module}/fargate-logging-configmap.yaml",
-    {
-      log_group_name     = aws_cloudwatch_log_group.fargate_logs.name
-      log_retention_days = aws_cloudwatch_log_group.fargate_logs.retention_in_days
-    }
-  ))
-
-  depends_on = [
-    kubernetes_namespace.aws_observability
-  ]
-}
-
 # IAM Role for Fargate Pod Execution used to pull container images and write logs to CloudWatch
 resource "aws_iam_role" "fargate_pod_execution_role" {
   name        = "fargate-pod-execution-role"
