@@ -40,6 +40,11 @@ output "eks_oidc_provider_arn" {
   value       = aws_iam_openid_connect_provider.eks_oidc.arn
 }
 
+output "preprocess_sa_role_arn" {
+  description = "ARN of the IAM role for preprocess service account"
+  value       = aws_iam_role.preprocess_sa_role.arn
+}
+
 # ECR Outputs
 output "ecr_preprocess_repository_url" {
   description = "URL of the ECR repository for preprocessing"
