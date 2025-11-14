@@ -626,10 +626,10 @@ def preprocess_all_players(
 
 if __name__ == "__main__":
     raw_data_path = os.environ.get(
-        "RAW_DATA_PATH", "s3://placeholder-bucket/raw_parquet/"
+        "RAW_DATA_PATH", "s3://placeholder-bucket/raw-parquet/"
     )
     output_file_path = os.environ.get(
-        "OUTPUT_FILE_PATH", "s3://placeholder-bucket/processed/player_features.parquet"
+        "OUTPUT_FILE_PATH", "s3://placeholder-bucket/processed/player-features.parquet"
     )
     worker_image = os.environ.get("WORKER_IMAGE", "placerhold_dask_image")
     n_workers = int(os.environ.get("N_WORKERS", 4))
