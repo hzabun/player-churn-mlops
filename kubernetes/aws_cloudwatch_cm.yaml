@@ -21,18 +21,16 @@ data:
         Buffer_Size 0
         Kube_Meta_Cache_TTL 300s
 
-  # Output configuration for CloudWatch Logs
   output.conf: |
     [OUTPUT]
         Name cloudwatch_logs
         Match kube.*
         region us-east-1
-        log_group_name ${log_group_name}
+        log_group_name /aws/eks/player-churn-prediction/fargate
         log_stream_prefix fargate/
-        log_retention_days ${log_retention_days}
+        log_retention_days 7
         auto_create_group true
 
-  # Parser for container runtime (CRI-O format)
   parsers.conf: |
     [PARSER]
         Name crio
