@@ -1,0 +1,29 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: preprocess-job
+spec:
+  template:
+    spec:
+      serviceAccountName: preprocess-sa
+      containers:
+        - name: preprocess
+          image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/player-churn-preprocess:latest
+          env:
+            - name: RAW_DATA_PATH
+              value: "s3://player-churn-bns-mlops/data/raw-parquet/"
+            - name: OUTPUT_FILE_PATH
+              value: "s3://player-churn-bns-mlops/data/player-features.parquet"
+            - name: WORKER_IMAGE
+              value: "<ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/player-churn-preprocess:latest"
+            - name: N_WORKERS
+              value: "4"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      restartPolicy: Never
+  backoffLimit: 4
