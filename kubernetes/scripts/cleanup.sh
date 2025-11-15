@@ -3,12 +3,10 @@ set -e
 
 echo "Cleaning up Dask resources..."
 
-# Delete Helm releases
-helm uninstall preprocessing-cluster -n processing || true
+# Delete Helm release
 helm uninstall dask-operator -n dask-operator || true
 
-# Delete namespaces
-kubectl delete namespace processing --ignore-not-found=true
+# Delete namespace
 kubectl delete namespace dask-operator --ignore-not-found=true
 
 echo "Cleanup complete!"

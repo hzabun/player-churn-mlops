@@ -7,7 +7,7 @@ AWS_REGION=${AWS_REGION:-us-east-1}
 IMAGE_TAG=${IMAGE_TAG:-latest}
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-HELM_VALUES_DIR="$SCRIPT_DIR/../helm/values/dask"
+MANIFESTS_DIR="$SCRIPT_DIR/../manifests/dask"
 
 if [[ ! "$ENV" =~ ^(dev|staging|prod)$ ]]; then
   echo "Usage: $0 [dev|staging|prod]"
@@ -23,26 +23,26 @@ echo "=========================================="
 
 # Apply base manifests with variable substitution
 echo "Creating namespace and service account..."
+export AWS_ACCOUNT_ID AWS_REGION IMAGE_TAG
 envsubst < "$SCRIPT_DIR/../base/namespace.yaml" | kubectl apply -f -
 envsubst < "$SCRIPT_DIR/../base/service-account.yaml" | kubectl apply -f -
 
-# Deploy Dask cluster with Helm
-echo "Deploying Dask cluster..."
-helm upgrade --install preprocessing-cluster dask/dask \
-  --namespace processing \
-  --values "$HELM_VALUES_DIR/values.yaml" \
-  --values "$HELM_VALUES_DIR/values-${ENV}.yaml" \
-  --set worker.image.repository="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/player-churn/preprocess" \
-  --set worker.image.tag="${IMAGE_TAG}" \
-  --set scheduler.image.repository="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/player-churn/preprocess" \
-  --set scheduler.image.tag="${IMAGE_TAG}" \
-  --wait \
-  --timeout 5m
+# Deploy Dask cluster using DaskCluster CRD
+echo "Deploying DaskCluster CRD..."
+envsubst < "$MANIFESTS_DIR/cluster-${ENV}.yaml" | kubectl apply -f -
+
+echo "Waiting for cluster to be ready..."
+kubectl wait --for=condition=ready pod \
+  -l dask.org/cluster-name=preprocessing-cluster,dask.org/component=scheduler \
+  -n processing \
+  --timeout=5m
 
 echo ""
 echo "=========================================="
 echo "Dask cluster deployed successfully!"
 echo "=========================================="
+kubectl get daskclusters -n processing
+echo ""
 kubectl get pods -n processing
 echo ""
 echo "To access Dask dashboard:"

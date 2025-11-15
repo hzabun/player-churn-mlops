@@ -14,14 +14,57 @@ spec:
         - name: preprocess
           image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/player-churn/preprocess:${IMAGE_TAG}
           env:
+            # Data paths
             - name: RAW_DATA_PATH
               value: "${RAW_DATA_PATH}"
-            - name: OUTPUT_PATH
-              value: "${OUTPUT_PATH}"
+            - name: OUTPUT_FILE_PATH
+              value: "${OUTPUT_FILE_PATH}"
+
+            # Dask cluster configuration
             - name: DASK_CLUSTER_NAME
               value: "${DASK_CLUSTER_NAME}"
+            - name: DASK_NAMESPACE
+              value: "processing"
+            - name: DASK_N_WORKERS
+              value: "${DASK_N_WORKERS}"
+            - name: DASK_SERVICE_ACCOUNT
+              value: "preprocess-sa"
+
+            # Dask worker resources
+            - name: DASK_WORKER_MEMORY_REQUEST
+              value: "${DASK_WORKER_MEMORY_REQUEST}"
+            - name: DASK_WORKER_MEMORY_LIMIT
+              value: "${DASK_WORKER_MEMORY_LIMIT}"
+            - name: DASK_WORKER_CPU_REQUEST
+              value: "${DASK_WORKER_CPU_REQUEST}"
+            - name: DASK_WORKER_CPU_LIMIT
+              value: "${DASK_WORKER_CPU_LIMIT}"
+
+            # Dask scheduler resources
+            - name: DASK_SCHEDULER_MEMORY_REQUEST
+              value: "${DASK_SCHEDULER_MEMORY_REQUEST}"
+            - name: DASK_SCHEDULER_MEMORY_LIMIT
+              value: "${DASK_SCHEDULER_MEMORY_LIMIT}"
+            - name: DASK_SCHEDULER_CPU_REQUEST
+              value: "${DASK_SCHEDULER_CPU_REQUEST}"
+            - name: DASK_SCHEDULER_CPU_LIMIT
+              value: "${DASK_SCHEDULER_CPU_LIMIT}"
+
+            # Dask worker configuration
+            - name: DASK_WORKER_THREADS
+              value: "${DASK_WORKER_THREADS}"
+            - name: DASK_WORKER_MEMORY_LIMIT_GB
+              value: "${DASK_WORKER_MEMORY_LIMIT_GB}"
+            - name: DASK_WORKER_DEATH_TIMEOUT
+              value: "${DASK_WORKER_DEATH_TIMEOUT}"
+
+            # AWS configuration
             - name: AWS_DEFAULT_REGION
               value: "${AWS_REGION}"
+            - name: AWS_ACCOUNT_ID
+              value: "${AWS_ACCOUNT_ID}"
+            - name: IMAGE_TAG
+              value: "${IMAGE_TAG}"
           resources:
             requests:
               memory: "1Gi"

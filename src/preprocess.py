@@ -8,7 +8,7 @@ import s3fs
 from dask.base import compute
 from dask.delayed import delayed
 from dask.distributed import Client
-from dask_kubernetes.operator import KubeCluster
+from dask_kubernetes.operator import KubeCluster, make_cluster_spec
 
 # Configure logging to output to stdout
 logging.basicConfig(
@@ -544,14 +544,16 @@ def preprocess_all_players(
     output_file_path: str,
     cluster_name: str = "preprocessing-cluster",
     namespace: str = "processing",
+    n_workers: int = 2,
 ) -> pd.DataFrame | None:
     """Run the complete preprocessing pipeline with Dask distributed processing.
 
     Args:
         raw_data_path: S3 path to directory containing raw Parquet files (e.g., 's3://bucket/path/')
         output_file_path: S3 path to save processed output (e.g., 's3://bucket/output/features.parquet')
-        cluster_name: Name of existing Dask cluster in Kubernetes (default: 'preprocessing-cluster')
-        namespace: Kubernetes namespace where cluster is deployed (default: 'processing')
+        cluster_name: Name for the dynamically created Dask cluster (default: 'preprocessing-cluster')
+        namespace: Kubernetes namespace to deploy cluster in (default: 'processing')
+        n_workers: Number of worker pods to create (default: 2)
 
     Returns:
         Processed player-level DataFrame with features or None if processing fails
@@ -597,19 +599,97 @@ def preprocess_all_players(
     logger.info(f"Found {len(parquet_files)} Parquet files")
     logger.info("=" * 70)
 
-    logger.info(f"Connecting to Dask cluster: {cluster_name} in namespace {namespace}")
+    # Get AWS configuration from environment
+    aws_region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+    aws_account_id = os.environ.get("AWS_ACCOUNT_ID")
+    image_tag = os.environ.get("IMAGE_TAG", "latest")
+
+    if not aws_account_id:
+        logger.error("AWS_ACCOUNT_ID environment variable not set")
+        return None
+
+    # Get Dask cluster configuration from environment
+    worker_memory_request = os.environ.get("DASK_WORKER_MEMORY_REQUEST", "2Gi")
+    worker_memory_limit = os.environ.get("DASK_WORKER_MEMORY_LIMIT", "4Gi")
+    worker_cpu_request = os.environ.get("DASK_WORKER_CPU_REQUEST", "1000m")
+    worker_cpu_limit = os.environ.get("DASK_WORKER_CPU_LIMIT", "2000m")
+
+    scheduler_memory_request = os.environ.get("DASK_SCHEDULER_MEMORY_REQUEST", "1Gi")
+    scheduler_memory_limit = os.environ.get("DASK_SCHEDULER_MEMORY_LIMIT", "2Gi")
+    scheduler_cpu_request = os.environ.get("DASK_SCHEDULER_CPU_REQUEST", "500m")
+    scheduler_cpu_limit = os.environ.get("DASK_SCHEDULER_CPU_LIMIT", "1000m")
+
+    worker_threads = os.environ.get("DASK_WORKER_THREADS", "1")
+    worker_memory_limit_gb = os.environ.get("DASK_WORKER_MEMORY_LIMIT_GB", "2GiB")
+    worker_death_timeout = os.environ.get("DASK_WORKER_DEATH_TIMEOUT", "60")
+    service_account = os.environ.get("DASK_SERVICE_ACCOUNT", "preprocess-sa")
+
+    image_repo = f"{aws_account_id}.dkr.ecr.{aws_region}.amazonaws.com/player-churn/preprocess:{image_tag}"
+
+    logger.info(
+        f"Creating dynamic Dask cluster: {cluster_name} in namespace {namespace}"
+    )
+    logger.info(f"Workers: {n_workers}, Image: {image_repo}")
 
     try:
-        # Connect to existing Dask cluster deployed via Helm
-        cluster = KubeCluster.from_name(name=cluster_name, namespace=namespace)
+        # Create base cluster spec using make_cluster_spec
+        cluster_spec = make_cluster_spec(
+            name=cluster_name,
+            image=image_repo,
+            n_workers=n_workers,
+            resources={
+                "requests": {
+                    "memory": worker_memory_request,
+                    "cpu": worker_cpu_request,
+                },
+                "limits": {"memory": worker_memory_limit, "cpu": worker_cpu_limit},
+            },
+            env={"AWS_DEFAULT_REGION": aws_region},
+        )
+
+        # Configure service account for IRSA (S3 access)
+        cluster_spec["spec"]["worker"]["spec"]["serviceAccountName"] = service_account
+        cluster_spec["spec"]["scheduler"]["spec"]["serviceAccountName"] = (
+            service_account
+        )
+
+        # Configure worker command with custom arguments
+        worker_container = cluster_spec["spec"]["worker"]["spec"]["containers"][0]
+        worker_container["args"] = [
+            "dask-worker",
+            "--nthreads",
+            worker_threads,
+            "--memory-limit",
+            worker_memory_limit_gb,
+            "--death-timeout",
+            worker_death_timeout,
+        ]
+
+        # Configure scheduler resources
+        scheduler_container = cluster_spec["spec"]["scheduler"]["spec"]["containers"][0]
+        scheduler_container["resources"] = {
+            "requests": {
+                "memory": scheduler_memory_request,
+                "cpu": scheduler_cpu_request,
+            },
+            "limits": {
+                "memory": scheduler_memory_limit,
+                "cpu": scheduler_cpu_limit,
+            },
+        }
+
+        # Ensure metadata includes namespace
+        cluster_spec["metadata"]["namespace"] = namespace
+
+        # Create a new Dask cluster dynamically using the operator
+        cluster = KubeCluster(custom_cluster_spec=cluster_spec, namespace=namespace)
+
         client = Client(cluster)
-        logger.info("Successfully connected to Dask cluster")
+        logger.info("Successfully created Dask cluster")
         logger.info(f"Dask dashboard available at: {client.dashboard_link}")
     except Exception as e:
-        logger.error(f"Failed to connect to Dask cluster '{cluster_name}': {e}")
-        logger.error(
-            "Make sure the cluster is deployed. Run: ./kubernetes/scripts/deploy-dask-cluster.sh"
-        )
+        logger.error(f"Failed to create Dask cluster '{cluster_name}': {e}")
+        logger.exception("Full traceback:")
         return None
 
     try:
@@ -657,8 +737,10 @@ def preprocess_all_players(
         return players
 
     finally:
-        # Close client but don't close cluster (it's persistent and managed by Helm)
+        # Close cluster - this will delete all pods and clean up resources
+        logger.info("Cleaning up Dask cluster...")
         client.close()
+        cluster.close()
 
 
 if __name__ == "__main__":
@@ -670,10 +752,12 @@ if __name__ == "__main__":
     )
     cluster_name = os.environ.get("DASK_CLUSTER_NAME", "preprocessing-cluster")
     namespace = os.environ.get("DASK_NAMESPACE", "processing")
+    n_workers = int(os.environ.get("DASK_N_WORKERS", "2"))
 
     preprocess_all_players(
         raw_data_path=raw_data_path,
         output_file_path=output_file_path,
         cluster_name=cluster_name,
         namespace=namespace,
+        n_workers=n_workers,
     )
