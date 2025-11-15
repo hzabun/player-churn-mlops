@@ -28,7 +28,7 @@ Raw Logs → Preprocess → Feature Store → Train → Predict → Deploy
 - [x] Comprehensive unit tests
 - [x] CI/CD with GitHub Actions
 - [x] Model training with LightGBM
-- [ ] Containerizing pipeline
+- [x] Containerizing pipeline
 - [ ] Migration to AWS (S3, EKS, ECR)
 - [ ] Model deployment on AWS EKS
 - [ ] Feature drift monitoring
