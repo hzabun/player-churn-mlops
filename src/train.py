@@ -342,10 +342,10 @@ def train_model_pipeline(
 
 if __name__ == "__main__":
     mlflow_tracking_uri = os.environ.get(
-        "MLFLOW_TRACKING_URI", "http://mlflow-server:5000"
+        "MLFLOW_TRACKING_URI", "http://mlflow-server.mlflow.svc.cluster.local:5000"
     )
     label_file_path = os.environ.get(
-        "LABEL_FILE_PATH", "s3://s3://placeholder-bucket/label/train_labels.csv"
+        "LABEL_FILE_PATH", "s3://placeholder-bucket/label/train_labels.csv"
     )
     experiment_name = os.environ.get("EXPERIMENT_NAME", "player_churn_prediction")
     run_name = os.environ.get("RUN_NAME")

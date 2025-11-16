@@ -22,3 +22,8 @@ output "oidc_provider_url" {
   description = "URL of the OIDC Provider for EKS"
   value       = aws_iam_openid_connect_provider.eks_oidc.url
 }
+
+output "mlflow_sa_role_arn" {
+  description = "ARN of the IAM role for MLflow service account"
+  value       = aws_iam_role.mlflow_sa.arn
+}

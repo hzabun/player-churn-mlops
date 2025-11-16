@@ -8,7 +8,6 @@ export TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 export AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}
 export AWS_REGION=${AWS_REGION:-us-east-1}
 export IMAGE_TAG=${IMAGE_TAG:-latest}
-export CLUSTER_NAME=${CLUSTER_NAME:-player-churn-${ENV}}
 
 # Data paths
 export RAW_DATA_PATH=${RAW_DATA_PATH:-"s3://player-churn-bns-mlops/data/raw-parquet/"}
@@ -85,10 +84,6 @@ echo "  Worker Resources: ${DASK_WORKER_MEMORY_REQUEST}/${DASK_WORKER_MEMORY_LIM
 echo "  Worker Threads: $DASK_WORKER_THREADS"
 echo "=========================================="
 
-# Create namespace and service account if they don't exist
-echo "Ensuring namespace and service account exist..."
-envsubst < "$SCRIPT_DIR/../base/namespace.yaml" | kubectl apply -f -
-envsubst < "$SCRIPT_DIR/../base/service-account.yaml" | kubectl apply -f -
 
 # Submit the job
 echo "Submitting job..."

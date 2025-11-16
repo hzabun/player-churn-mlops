@@ -56,3 +56,17 @@ resource "aws_eks_fargate_profile" "processing" {
 
   tags = var.tags
 }
+
+# Fargate profile for training namespace
+resource "aws_eks_fargate_profile" "training" {
+  cluster_name           = aws_eks_cluster.this.name
+  fargate_profile_name   = "training"
+  pod_execution_role_arn = var.fargate_pod_execution_role_arn
+  subnet_ids             = var.subnet_ids
+
+  selector {
+    namespace = "training"
+  }
+
+  tags = var.tags
+}

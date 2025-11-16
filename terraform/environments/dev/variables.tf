@@ -92,6 +92,7 @@ variable "ecr_repository_names" {
   type        = list(string)
   default = [
     "player-churn/preprocess",
-    "player-churn/train"
+    "player-churn/train",
+    "player-churn-mlflow"
   ]
 }
