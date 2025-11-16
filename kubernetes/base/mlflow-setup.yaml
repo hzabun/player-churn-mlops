@@ -4,7 +4,6 @@ metadata:
   name: mlflow
   labels:
     app: player-churn-mlops
-    component: mlflow
     environment: production
 ---
 apiVersion: v1

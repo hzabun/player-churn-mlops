@@ -2,8 +2,9 @@
 FROM ghcr.io/mlflow/mlflow:v2.18.0
 
 # Install additional dependencies for AWS S3 backend
-RUN pip install --no-cache-dir \
-    boto3
+RUN pip install --no-cache-dir boto3
+
+ENV PYTHONUNBUFFERED=1
 
 # Create non-root user
 RUN groupadd --system --gid 999 mlflow \

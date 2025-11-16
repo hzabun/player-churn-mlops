@@ -1,6 +1,6 @@
-# IAM Role for MLflow Service Account
-resource "aws_iam_role" "mlflow_sa" {
-  name = "${var.cluster_name}-mlflow-sa-role"
+# IAM Role for training Service Account
+resource "aws_iam_role" "training_sa" {
+  name = "${var.cluster_name}-training-sa-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -13,7 +13,7 @@ resource "aws_iam_role" "mlflow_sa" {
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
           StringEquals = {
-            "${replace(var.oidc_issuer_url, "https://", "")}:sub" : "system:serviceaccount:mlflow:mlflow-sa"
+            "${replace(var.oidc_issuer_url, "https://", "")}:sub" : "system:serviceaccount:training:training-sa"
             "${replace(var.oidc_issuer_url, "https://", "")}:aud" : "sts.amazonaws.com"
           }
         }
@@ -24,15 +24,15 @@ resource "aws_iam_role" "mlflow_sa" {
   tags = merge(
     var.tags,
     {
-      Name = "${var.cluster_name}-mlflow-sa-role"
+      Name = "${var.cluster_name}-training-sa-role"
     }
   )
 }
 
-# IAM Policy for MLflow S3 Access
-resource "aws_iam_policy" "mlflow_s3" {
-  name        = "${var.cluster_name}-mlflow-s3-policy"
-  description = "Policy for MLflow to access S3 for artifacts and backend storage"
+# IAM Policy for training S3 Access
+resource "aws_iam_policy" "training_s3" {
+  name        = "${var.cluster_name}-training-s3-policy"
+  description = "Policy for feast training to access S3 for registry and offline store"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -54,7 +54,7 @@ resource "aws_iam_policy" "mlflow_s3" {
           "s3:ListMultipartUploadParts",
           "s3:AbortMultipartUpload"
         ]
-        Resource = "${var.s3_bucket_arn}/mlflow/*"
+        Resource = "${var.s3_bucket_arn}/feature-store/*"
       }
     ]
   })
@@ -62,8 +62,8 @@ resource "aws_iam_policy" "mlflow_s3" {
   tags = var.tags
 }
 
-# Attach policy to MLflow role
-resource "aws_iam_role_policy_attachment" "mlflow_s3" {
-  role       = aws_iam_role.mlflow_sa.name
-  policy_arn = aws_iam_policy.mlflow_s3.arn
+# Attach policy to training role
+resource "aws_iam_role_policy_attachment" "training_s3" {
+  role       = aws_iam_role.training_sa.name
+  policy_arn = aws_iam_policy.training_s3.arn
 }

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def _get_training_data(
     label_file_path: str,
-    feature_store_path: str = "feature_store",
+    feature_store_path: str,
 ) -> pd.DataFrame:
     """Fetch historical features from Feast for model training with proper point-in-time joins.
 
@@ -229,9 +229,9 @@ def _evaluate_model(
 def train_model_pipeline(
     mlflow_tracking_uri: str,
     label_file_path: str,
-    experiment_name: str = "player_churn_prediction",
+    experiment_name: str,
+    feature_store_path: str,
     run_name: str | None = None,
-    feature_store_path: str = "feature_store",
     test_size: float = 0.2,
     val_size: float = 0.1,
     random_state: int = 42,
@@ -348,8 +348,8 @@ if __name__ == "__main__":
         "LABEL_FILE_PATH", "s3://placeholder-bucket/label/train_labels.csv"
     )
     experiment_name = os.environ.get("EXPERIMENT_NAME", "player_churn_prediction")
-    run_name = os.environ.get("RUN_NAME")
-    feature_store_path = os.environ.get("FEATURE_STORE_PATH", "feature_store")
+    run_name = os.environ.get("RUN_NAME", None)
+    feature_store_path = os.environ.get("FEATURE_STORE_PATH", "/feast")
     test_size = float(os.environ.get("TEST_SIZE", "0.2"))
     val_size = float(os.environ.get("VAL_SIZE", "0.1"))
     random_state = int(os.environ.get("RANDOM_STATE", "42"))

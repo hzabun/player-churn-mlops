@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: feature-store-config
+data:
+  feature_store.yaml: |
+    project: player_churn_prediction
+    registry:
+      path: s3://player-churn-bns-mlops/feature-store/registry.pb
+      cache_ttl_seconds: 60
+    provider: aws
+    online_store:
+      type: dynamodb
+      region: us-east-1
+    entity_key_serialization_version: 3
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: training-job-${TIMESTAMP}
+spec:
+  template:
+    spec:
+      serviceAccountName: training-sa
+      restartPolicy: Never
+      containers:
+        - name: trainer
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/player-churn/train:${IMAGE_TAG}
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: "${MLFLOW_TRACKING_URI}"
+            - name: LABEL_FILE_PATH
+              value: "${LABEL_FILE_PATH}"
+            - name: EXPERIMENT_NAME
+              value: "${MLFLOW_TRACKING_URI}"
+            - name: RUN_NAME
+              value: "${RUN_NAME}"
+            - name: FEATURE_STORE_PATH
+              value: "${FEATURE_STORE_PATH}"
+            - name: TEST_SIZE
+              value: "${TEST_SIZE}"
+            - name: VAL_SIZE
+              value: "${VAL_SIZE}"
+            - name: RANDOM_STATE
+              value: "${RANDOM_STATE}"
+          volumeMounts:
+            - name: feature-store-config
+              mountPath: /feast
+              readOnly: true
+      volumes:
+        - name: feature-store-config
+          configMap:
+            name: feature-store-config
