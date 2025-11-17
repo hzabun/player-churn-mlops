@@ -19,7 +19,7 @@ spec:
       serviceAccountName: mlflow-sa
       containers:
         - name: mlflow
-          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.ecr.amazonaws.com/player-churn/mlflow:${IMAGE_TAG}
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/player-churn/mlflow:${IMAGE_TAG}
           imagePullPolicy: Always
           ports:
             - containerPort: 5000
