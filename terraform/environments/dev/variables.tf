@@ -93,6 +93,6 @@ variable "ecr_repository_names" {
   default = [
     "player-churn/preprocess",
     "player-churn/train",
-    "player-churn-mlflow"
+    "player-churn/mlflow"
   ]
 }
