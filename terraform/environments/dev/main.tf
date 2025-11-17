@@ -110,6 +110,25 @@ module "iam" {
   oidc_issuer_url       = module.eks.oidc_issuer_url
   fargate_log_group_arn = module.eks.fargate_log_group_arn
   s3_bucket_arn         = module.s3.bucket_arn
+  rds_secret_arn        = module.rds.secret_arn
+
+  tags = local.tags
+}
+
+module "rds" {
+  source = "../../modules/rds"
+
+  cluster_name        = local.cluster_name
+  vpc_id              = module.vpc.vpc_id
+  subnet_ids          = module.vpc.private_subnets
+  allowed_cidr_blocks = [var.vpc_cidr]
+
+  database_name           = "mlflow"
+  master_username         = "mlflow_admin"
+  instance_class          = "db.t4g.micro"
+  allocated_storage       = 20
+  skip_final_snapshot     = true
+  backup_retention_period = 7
 
   tags = local.tags
 }

@@ -84,3 +84,10 @@ output "configure_kubectl" {
   description = "Command to configure kubectl"
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_id}"
 }
+
+# RDS config
+output "rds_connection_string" {
+  description = "PostgreSQL connection string for MLflow"
+  value       = module.rds.connection_string
+  sensitive   = true
+}

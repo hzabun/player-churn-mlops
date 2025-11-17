@@ -67,3 +67,31 @@ resource "aws_iam_role_policy_attachment" "mlflow_s3" {
   role       = aws_iam_role.mlflow_sa.name
   policy_arn = aws_iam_policy.mlflow_s3.arn
 }
+
+# Add policy for Secrets Manager access
+resource "aws_iam_policy" "mlflow_secrets_access" {
+  name        = "${var.cluster_name}-mlflow-secrets-access"
+  description = "Allow MLflow to read RDS credentials from Secrets Manager"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = var.rds_secret_arn
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+# Attach secrets policy to MLflow role
+resource "aws_iam_role_policy_attachment" "mlflow_secrets_access" {
+  role       = aws_iam_role.mlflow_sa.name
+  policy_arn = aws_iam_policy.mlflow_secrets_access.arn
+}

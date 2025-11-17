@@ -33,7 +33,7 @@ data:
         Name cloudwatch_logs
         Match kube.*
         region us-east-1
-        log_group_name /aws/eks/player-churn-prediction/fargate
+        log_group_name /aws/eks/${CLUSTER_NAME}/fargate
         log_stream_prefix fargate/
         log_retention_days 7
         auto_create_group true

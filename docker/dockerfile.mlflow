@@ -2,7 +2,7 @@
 FROM ghcr.io/mlflow/mlflow:v2.18.0
 
 # Install additional dependencies for AWS S3 backend
-RUN pip install --no-cache-dir boto3
+RUN pip install --no-cache-dir boto3 psycopg2-binary
 
 ENV PYTHONUNBUFFERED=1
 
@@ -15,8 +15,4 @@ USER mlflow
 EXPOSE 5000
 
 # Default command - can be overridden
-CMD ["mlflow", "server", \
-    "--host", "0.0.0.0", \
-    "--port", "5000", \
-    "--default-artifact-root", "${MLFLOW_ARTIFACT_ROOT}", \
-    "--backend-store-uri", "${MLFLOW_BACKEND_STORE_URI}"]
+CMD mlflow server --host 0.0.0.0 --port 5000 --default-artifact-root ${MLFLOW_ARTIFACT_ROOT} --backend-store-uri ${MLFLOW_BACKEND_STORE_URI}

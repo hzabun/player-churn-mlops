@@ -24,14 +24,6 @@ echo "S3 Bucket: $S3_BUCKET_NAME"
 echo "Image Tag: $IMAGE_TAG"
 echo "=========================================="
 
-# Create namespace
-echo "Creating mlflow namespace..."
-kubectl apply -f "$SCRIPT_DIR/../base/mlflow-namespace.yaml"
-
-# Create service account
-echo "Creating MLflow service account..."
-envsubst < "$SCRIPT_DIR/../base/mlflow-service-account.yaml" | kubectl apply -f -
-
 # Deploy MLflow server
 echo "Deploying MLflow server..."
 envsubst < "$SCRIPT_DIR/../deployments/mlflow-server.yaml" | kubectl apply -f -

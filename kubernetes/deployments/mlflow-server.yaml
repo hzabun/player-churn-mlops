@@ -29,7 +29,10 @@ spec:
             - name: MLFLOW_ARTIFACT_ROOT
               value: "s3://${S3_BUCKET_NAME}/mlflow/artifacts"
             - name: MLFLOW_BACKEND_STORE_URI
-              value: "s3://${S3_BUCKET_NAME}/mlflow/backend"
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-rds-secret
+                  key: connection_string
             - name: AWS_DEFAULT_REGION
               value: "${AWS_REGION}"
           resources:
