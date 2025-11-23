@@ -4,7 +4,8 @@
 
 Production-grade MLOps pipeline for player churn prediction using event-driven behavioral data. Demonstrates end-to-end ML infrastructure with distributed preprocessing (Dask), feature store architecture (Feast), and cloud-native deployment (AWS EKS).
 
-> **Status:** Active development - core infrastructure (Terraform, EKS, Feast, Prefect orchestration) is production-ready. Model serving and monitoring layers in progress.
+> [!Note]
+> Active development - core infrastructure (Terraform, EKS, Feast, Prefect orchestration) is production-ready. Model serving and monitoring layers in progress.
 
 ## System Architecture
 ```mermaid
