@@ -1,6 +1,10 @@
 # Player Churn MLOps Pipeline
 
 [![CI/CD Pipeline](https://github.com/hzabun/player-churn-mlops/actions/workflows/ci.yml/badge.svg)](https://github.com/hzabun/player-churn-mlops/actions/workflows/ci.yml)
+[![Python 3.13+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 Production-grade MLOps pipeline for player churn prediction using event-driven behavioral data. Demonstrates end-to-end ML infrastructure with distributed preprocessing (Dask), feature store architecture (Feast), MLflow model registry, and cloud-native deployment (AWS EKS).
 
@@ -8,6 +12,7 @@ Production-grade MLOps pipeline for player churn prediction using event-driven b
 > Active development - core infrastructure (Terraform, EKS, Feast, MLflow, Prefect orchestration) is production-ready. Model serving and monitoring layers in progress.
 
 ## System Architecture
+
 ```mermaid
 graph TB
 
@@ -17,12 +22,12 @@ graph TB
         GHA -->|build & push| ECR[AWS ECR<br/>Docker Images]
         GHA -->|feast apply| Registry[Feast Registry]
     end
-    
+
     %% --- Orchestration ---
     subgraph "Orchestration"
         Trigger[Manual or Scheduled<br/>Trigger] -->|starts flow| Prefect[Prefect Orchestrator]
     end
-    
+
     %% --- Data Processing ---
     subgraph "Data Processing - AWS EKS"
         Prefect -->|spawns job| Preprocess[Preprocessing Job<br/>Dask]
@@ -35,27 +40,27 @@ graph TB
         DynamoDB[(DynamoDB)] -->|online store| Feast
         Registry -.->|defines features| Feast
     end
-    
+
     %% --- Model Training ---
     subgraph "Model Training - AWS EKS"
         Prefect -->|spawns job| Train[Training Job<br/>LightGBM]
         Train -->|reads features| Feast
         Train -->|registers model| MLflow[MLflow Model Registry]
     end
-    
+
     %% --- Model Deployment ---
     subgraph "Model Deployment"
         MLflow -->|model metadata| Prefect
         Prefect -->|if approved| Deploy[Deployment Flow]
         Deploy -->|update model URI| KServeConfig[KServe Config]
     end
-    
+
     %% --- Model Serving ---
     subgraph "Model Serving - AWS EKS"
         KServeConfig -->|rolling update| KServe[KServe Inference Service]
         KServe -->|reads features| DynamoDB
     end
-    
+
     %% --- Monitoring ---
     subgraph "Monitoring"
         Prometheus[Prometheus] -.-> Preprocess
@@ -79,6 +84,7 @@ graph TB
 ## Technical Highlights
 
 **Production ML Infrastructure:**
+
 - AWS EKS cluster provisioned via Terraform for scalable compute
 - Containerized preprocessing and training pipelines (Docker + ECR)
 - MLflow model registry for versioned model tracking and lifecycle management
@@ -86,11 +92,13 @@ graph TB
 - Prefect orchestration for workflow scheduling and monitoring
 
 **Distributed Data Processing:**
+
 - Event-driven behavioral data (player actions, sessions, items)
 - Dask clusters for distributed preprocessing of large game log datasets
 - Session aggregation pipeline generating player-level behavioral features
 
 **MLOps Best Practices:**
+
 - Infrastructure as Code (Terraform) for reproducible cloud environments
 - Centralized model registry (MLflow) with experiment tracking and versioning
 - Automated model promotion workflow (staging → production)
@@ -101,26 +109,28 @@ graph TB
 
 ## At a Glance
 
-| Component           | Technology                              | Status        |
-|---------------------|-----------------------------------------|---------------|
-| Infrastructure      | Terraform + AWS EKS                     | ✅ Production |
-| Data Processing     | Dask (distributed)                      | ✅ Production |
-| Feature Store       | Feast (S3 + DynamoDB)                   | ✅ Production |
-| Model Training      | LightGBM                                | ✅ Production |
-| Model Registry      | MLflow (deployed on EKS)                | ✅ Production |
-| Orchestration       | Prefect                                 | ✅ Production |
-| Containerization    | Docker + AWS ECR                        | ✅ Production |
-| CI/CD               | GitHub Actions                          | ✅ Production |
-| Model Serving       | KServe on EKS                           | 🚧 In Progress |
-| Monitoring          | Prometheus + Grafana                    | 🚧 In Progress |
-| Drift Detection     | EvidentlyAI                             | 📋 Planned    |
+| Component        | Technology               | Status         |
+| ---------------- | ------------------------ | -------------- |
+| Infrastructure   | Terraform + AWS EKS      | ✅ Production  |
+| Data Processing  | Dask (distributed)       | ✅ Production  |
+| Feature Store    | Feast (S3 + DynamoDB)    | ✅ Production  |
+| Model Training   | LightGBM                 | ✅ Production  |
+| Model Registry   | MLflow (deployed on EKS) | ✅ Production  |
+| Orchestration    | Prefect                  | ✅ Production  |
+| Containerization | Docker + AWS ECR         | ✅ Production  |
+| CI/CD            | GitHub Actions           | ✅ Production  |
+| Model Serving    | KServe on EKS            | 🚧 In Progress |
+| Monitoring       | Prometheus + Grafana     | 🚧 In Progress |
+| Drift Detection  | EvidentlyAI              | 📋 Planned     |
 
 ## Pipeline Overview
+
 ```
 Player Events → Dask Preprocessing → Feast Feature Store → LightGBM Training → MLflow Registry → KServe Deployment → Monitoring
 ```
 
 **Data Flow:**
+
 1. Raw player event logs (actions, sessions, items) ingested from game servers
 2. Distributed preprocessing via Dask clusters aggregates events into session-level features
 3. Processed features written to Feast offline store (S3 parquet files, later replaced with AWS Redshift)
@@ -134,23 +144,27 @@ Player Events → Dask Preprocessing → Feast Feature Store → LightGBM Traini
 ## Key Features
 
 **Model Lifecycle Management:**
+
 - MLflow experiment tracking with hyperparameter logging
 - Model versioning with automatic metadata capture
 - Stage-based promotion (None → Staging → Production → Archived)
 - Model lineage tracking (data version, feature version, code version)
 
 **Feature Engineering:**
+
 - Session-based behavioral aggregations (actions per session, item transactions, experience gained)
 - Temporal features (play frequency, session duration patterns)
 - Engagement metrics (progression rate, social interactions)
 
 **Scalability:**
+
 - Kubernetes-based deployment for horizontal scaling
 - Distributed preprocessing handles large game log datasets
 - Feature store architecture separates offline training from online serving
 - Model registry enables A/B testing and canary deployments
 
 **Observability:**
+
 - Prefect UI for pipeline monitoring and debugging
 - MLflow UI for experiment tracking and model comparison
 - Prometheus metrics collection for infrastructure and model performance
@@ -160,6 +174,7 @@ Player Events → Dask Preprocessing → Feast Feature Store → LightGBM Traini
 ## Quick Start
 
 **Prerequisites:**
+
 - AWS account with EKS access
 - Terraform ≥1.0
 - Docker
@@ -167,6 +182,7 @@ Player Events → Dask Preprocessing → Feast Feature Store → LightGBM Traini
 - [uv](https://github.com/astral-sh/uv) (modern Python package manager)
 
 **Setup:**
+
 ```bash
 # Clone repository
 git clone https://github.com/my-account/player-churn-mlops
@@ -205,6 +221,7 @@ prefect deployment run training-flow/production
 ## Development Workflow
 
 **Code Changes:**
+
 ```
 1. Developer pushes code to main branch
 2. GitHub Actions runs tests and linting
@@ -214,6 +231,7 @@ prefect deployment run training-flow/production
 ```
 
 **Feature Changes:**
+
 ```
 1. Developer modifies feature definitions in feature_repo/
 2. GitHub Actions detects changes and runs `feast apply`
@@ -222,6 +240,7 @@ prefect deployment run training-flow/production
 ```
 
 **Model Training & Deployment:**
+
 ```
 1. Scheduled training job runs on EKS
 2. Model trained with features from Feast
@@ -249,6 +268,7 @@ KServe loads models directly from MLflow using the model URI format: `models:/ch
 ## Roadmap
 
 **Phase 1: Core Infrastructure** ✅
+
 - [x] AWS EKS cluster with Terraform
 - [x] MLflow server deployment on EKS
 - [x] Dockerized preprocessing and training
@@ -258,6 +278,7 @@ KServe loads models directly from MLflow using the model URI format: `models:/ch
 - [x] Comprehensive unit tests
 
 **Phase 2: Production Deployment** 🚧
+
 - [x] EKS-based preprocessing jobs
 - [x] EKS-based training jobs with MLflow tracking
 - [ ] Automated model promotion workflow
@@ -266,6 +287,7 @@ KServe loads models directly from MLflow using the model URI format: `models:/ch
 - [ ] EvidentlyAI drift detection
 
 **Phase 3: Automation & Optimization** 📋
+
 - [ ] Automated retraining triggers (GitHub Actions + Prefect)
 - [ ] A/B testing framework with MLflow experiments
 - [ ] Canary deployments for model rollouts
@@ -284,13 +306,13 @@ Built as a practical exploration of modern MLOps patterns for gaming analytics. 
 
 ## Technologies
 
-**Infrastructure:** AWS EKS, Terraform, Docker, Kubernetes  
+**Infrastructure:** AWS EKS, Terraform, Docker, Kubernetes
 **Data Processing:** Dask, Pandas
-**Feature Store:** Feast, S3, DynamoDB  
-**ML Framework:** LightGBM, scikit-learn  
-**Model Registry:** MLflow (experiment tracking, model versioning)  
-**Orchestration:** Prefect  
-**Model Serving:** KServe  
-**Monitoring:** Prometheus, Grafana, EvidentlyAI  
-**CI/CD:** GitHub Actions, AWS ECR  
+**Feature Store:** Feast, S3, DynamoDB
+**ML Framework:** LightGBM, scikit-learn
+**Model Registry:** MLflow (experiment tracking, model versioning)
+**Orchestration:** Prefect
+**Model Serving:** KServe
+**Monitoring:** Prometheus, Grafana, EvidentlyAI
+**CI/CD:** GitHub Actions, AWS ECR
 **Package Management:** uv
