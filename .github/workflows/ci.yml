@@ -77,34 +77,35 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  validate-feast:
-    name: Validate Feast Feature Store
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  # Uncomment after setting up AWS credentials
+  # validate-feast:
+  #   name: Validate Feast Feature Store
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
 
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v7
+  #     - name: Install the latest version of uv
+  #       uses: astral-sh/setup-uv@v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: "3.13"
 
-      - name: Install Feast
-        run: uv sync --frozen --group feast
+  #     - name: Install Feast
+  #       run: uv sync --frozen --group feast
 
-      - name: Validate feature definitions
-        run: |
-          cd feature_store
-          uv run feast plan
+  #     - name: Validate feature definitions
+  #       run: |
+  #         cd feature_store
+  #         uv run feast plan
 
-      - name: Test Feast registry (dry-run)
-        run: |
-          cd feature_store
-          uv run feast --help
-          uv run python -c "from feast import FeatureStore; fs = FeatureStore(repo_path='.'); print('Feature store loaded successfully')"
+  #     - name: Test Feast registry (dry-run)
+  #       run: |
+  #         cd feature_store
+  #         uv run feast --help
+  #         uv run python -c "from feast import FeatureStore; fs = FeatureStore(repo_path='.'); print('Feature store loaded successfully')"
 
   validate-prefect:
     name: Validate Prefect Flows
